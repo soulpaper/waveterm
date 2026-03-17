@@ -50,5 +50,38 @@
                 "view": "sysinfo"
             }
         }
+    },
+    "defwidget@youtube": {
+        "display:order": 1,
+        "icon": "brands@youtube",
+        "label": "YouTube",
+        "blockdef": {
+            "meta": {
+                "view": "web",
+                "url": "https://www.youtube.com"
+            }
+        }
+    },
+    "defwidget@gemini": {
+        "display:order": 2,
+        "icon": "brands@google",
+        "label": "Gemini",
+        "blockdef": {
+            "meta": {
+                "view": "web",
+                "url": "https://gemini.google.com"
+            }
+        }
+    },
+    "defwidget@claude": {
+        "display:order": 3,
+        "icon": "message-bot",
+        "label": "Claude",
+        "blockdef": {
+            "meta": {
+                "view": "web",
+                "url": "https://claude.ai"
+            }
+        }
     }
 }

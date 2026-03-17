@@ -444,6 +444,15 @@ const Widgets = memo(() => {
         e.preventDefault();
         const menu: ContextMenuItem[] = [
             {
+                label: "Add Web Widget",
+                click: () => {
+                    modalsModel.pushModal("AddWebWidgetModal");
+                },
+            },
+            {
+                type: "separator",
+            },
+            {
                 label: "Edit widgets.json",
                 click: () => {
                     fireAndForget(async () => {
