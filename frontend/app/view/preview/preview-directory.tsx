@@ -7,6 +7,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { checkKeyPressed, isCharacterKeyEvent } from "@/util/keyutil";
 import { PLATFORM, PlatformMacOS } from "@/util/platformutil";
+import { WaveAIModel } from "@/app/aipanel/waveai-model";
 import { addOpenMenuItems } from "@/util/previewutil";
 import { fireAndForget } from "@/util/util";
 import { formatRemoteUri } from "@/util/waveutil";
@@ -406,6 +407,17 @@ function TableBody({
                 {
                     label: "Copy Full File Name (Shell Quoted)",
                     click: () => fireAndForget(() => navigator.clipboard.writeText(shellQuote([finfo.path]))),
+                },
+                {
+                    type: "separator",
+                },
+                {
+                    label: "Add Path to AI Input",
+                    click: () => {
+                        const aiModel = WaveAIModel.getInstance();
+                        aiModel.appendText(finfo.path);
+                        aiModel.focusInput();
+                    },
                 },
             ];
             addOpenMenuItems(menu, conn, finfo);
@@ -852,6 +864,17 @@ function DirectoryPreview({ model }: DirectoryPreviewProps) {
                     label: "New Folder",
                     click: () => {
                         newDirectory();
+                    },
+                },
+                {
+                    type: "separator",
+                },
+                {
+                    label: "Add Path to AI Input",
+                    click: () => {
+                        const aiModel = WaveAIModel.getInstance();
+                        aiModel.appendText(dirPath);
+                        aiModel.focusInput();
                     },
                 },
                 {

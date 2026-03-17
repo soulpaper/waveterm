@@ -473,6 +473,9 @@ const AIPanelComponentInner = memo(({ roundTopLeft }: AIPanelComponentInnerProps
             if (!allowAccess) {
                 return;
             }
+            // Add file path to the input text
+            const filePath = draggedFile.absParent + "/" + draggedFile.relName;
+            model.appendText(filePath);
             model.addFileFromRemoteUri(draggedFile);
         },
         [model, allowAccess]
