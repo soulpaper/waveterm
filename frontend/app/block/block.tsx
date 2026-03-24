@@ -12,6 +12,7 @@ import {
 import type { TabModel } from "@/app/store/tab-model";
 import { useTabModel } from "@/app/store/tab-model";
 import { AiFileDiffViewModel } from "@/app/view/aifilediff/aifilediff";
+import { ClaudeSessionsViewModel } from "@/app/view/claudesessions/claudesessions";
 import { LauncherViewModel } from "@/app/view/launcher/launcher";
 import { PreviewModel } from "@/app/view/preview/preview-model";
 import { SysinfoViewModel } from "@/app/view/sysinfo/sysinfo";
@@ -54,6 +55,7 @@ BlockRegistry.set("launcher", LauncherViewModel);
 BlockRegistry.set("tsunami", TsunamiViewModel);
 BlockRegistry.set("aifilediff", AiFileDiffViewModel);
 BlockRegistry.set("waveconfig", WaveConfigViewModel);
+BlockRegistry.set("claudesessions", ClaudeSessionsViewModel);
 
 function makeViewModel(
     blockId: string,

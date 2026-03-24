@@ -83,5 +83,16 @@
                 "url": "https://claude.ai"
             }
         }
+    },
+    "defwidget@claudesessions": {
+        "display:order": 4,
+        "icon": "message-bot",
+        "label": "Claude Sessions",
+        "description": "View and resume incomplete Claude Code sessions",
+        "blockdef": {
+            "meta": {
+                "view": "claudesessions"
+            }
+        }
     }
 }
