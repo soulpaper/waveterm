@@ -19,6 +19,7 @@ import clsx from "clsx";
 import debug from "debug";
 import * as jotai from "jotai";
 import * as React from "react";
+import { useDrop } from "react-dnd";
 import { TermLinkTooltip } from "./term-tooltip";
 import { TermStickers } from "./termsticker";
 import { TermThemeUpdater } from "./termtheme";
@@ -166,6 +167,17 @@ const TermToolbarVDomNode = ({ blockId, model }: TerminalViewProps) => {
     );
 };
 
+/**
+ * Escape a file path for safe pasting into a shell.
+ * Wraps in single quotes if the path contains shell-special characters.
+ */
+function shellQuotePath(path: string): string {
+    if (/[\s'"\\()&|;<>$`!#*?{}\[\]~]/.test(path)) {
+        return "'" + path.replace(/'/g, "'\\''") + "'";
+    }
+    return path;
+}
+
 const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => {
     const viewRef = React.useRef<HTMLDivElement>(null);
     const connectElemRef = React.useRef<HTMLDivElement>(null);
@@ -173,6 +185,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
     const [blockData] = WOS.useWaveObjectValue<Block>(WOS.makeORef("block", blockId));
     const termSettingsAtom = getSettingsPrefixAtom("term");
     const termSettings = jotai.useAtomValue(termSettingsAtom);
+    const [isDragOver, setIsDragOver] = React.useState(false);
     let termMode = blockData?.meta?.["term:mode"] ?? "term";
     if (termMode != "term" && termMode != "vdom") {
         termMode = "term";
@@ -374,8 +387,99 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         [model]
     );
 
+    // --- File drag-and-drop handlers ---
+    const pastePathToTerminal = React.useCallback(
+        (path: string) => {
+            const escaped = shellQuotePath(path);
+            model.termRef.current?.terminal.paste(escaped + " ");
+        },
+        [model]
+    );
+
+    // react-dnd: accept FILE_ITEM from file browser
+    const handleFileItemDrop = React.useCallback(
+        (draggedFile: DraggedFile) => {
+            const filePath = draggedFile.absParent + "/" + draggedFile.relName;
+            pastePathToTerminal(filePath);
+            model.giveFocus();
+        },
+        [pastePathToTerminal, model]
+    );
+
+    const [{ isOver: isFileItemOver }, dropRef] = useDrop(
+        () => ({
+            accept: "FILE_ITEM",
+            drop: handleFileItemDrop,
+            collect: (monitor) => ({
+                isOver: monitor.isOver(),
+            }),
+        }),
+        [handleFileItemDrop]
+    );
+
+    React.useEffect(() => {
+        if (viewRef.current) {
+            dropRef(viewRef.current);
+        }
+    }, [dropRef]);
+
+    // Native file drag from OS file manager
+    const handleDragOver = React.useCallback((e: React.DragEvent) => {
+        if (e.dataTransfer.types.includes("Files") || e.dataTransfer.types.includes("text/plain")) {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDragOver(true);
+        }
+    }, []);
+
+    const handleDragLeave = React.useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const x = e.clientX;
+        const y = e.clientY;
+        if (x <= rect.left || x >= rect.right || y <= rect.top || y >= rect.bottom) {
+            setIsDragOver(false);
+        }
+    }, []);
+
+    const handleDrop = React.useCallback(
+        (e: React.DragEvent) => {
+            // Let react-dnd handle FILE_ITEM drags
+            if (!e.dataTransfer.files.length && !e.dataTransfer.getData("text/plain")) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDragOver(false);
+
+            // Native file drops (from OS file manager)
+            if (e.dataTransfer.files.length > 0) {
+                const files = Array.from(e.dataTransfer.files);
+                const paths = files.map((f) => shellQuotePath((f as any).path || f.name)).join(" ");
+                model.termRef.current?.terminal.paste(paths + " ");
+                model.giveFocus();
+                return;
+            }
+
+            // Text drops
+            const text = e.dataTransfer.getData("text/plain");
+            if (text) {
+                model.termRef.current?.terminal.paste(text);
+                model.giveFocus();
+            }
+        },
+        [model]
+    );
+
     return (
-        <div className={clsx("view-term", "term-mode-" + termMode)} ref={viewRef} onContextMenu={handleContextMenu}>
+        <div
+            className={clsx("view-term", "term-mode-" + termMode, (isDragOver || isFileItemOver) && "term-drag-over")}
+            ref={viewRef}
+            onContextMenu={handleContextMenu}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+        >
             {termBg && <div key="term-bg" className="absolute inset-0 z-0 pointer-events-none" style={termBg} />}
             <TermResyncHandler blockId={blockId} model={model} />
             <TermThemeUpdater blockId={blockId} model={model} termRef={model.termRef} />

@@ -75,6 +75,11 @@
         }
     }
 
+    &.term-drag-over {
+        outline: 2px dashed var(--accent-color, #4a9eff);
+        outline-offset: -2px;
+    }
+
     &.term-mode-term {
         .term-connectelem {
             display: flex;
