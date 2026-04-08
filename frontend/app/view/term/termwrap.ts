@@ -100,6 +100,11 @@ export class TermWrap {
     lastCompositionEnd: number = 0;
     lastComposedText: string = "";
     firstDataAfterCompositionSent: boolean = false;
+    // Counter of compositionend events whose committed text we still expect to receive via
+    // xterm.js's CompositionHelper setTimeout(0) callback. Decremented on first matching data
+    // event. Auto-decremented after a safety timeout if data never arrives (e.g. empty
+    // composition cancelled with Escape).
+    pendingComposedData: number = 0;
 
     // Paste deduplication
     // xterm.js paste() method triggers onData event, which can cause duplicate sends
@@ -313,6 +318,7 @@ export class TermWrap {
         this.lastComposedText = "";
         this.lastCompositionEnd = 0;
         this.firstDataAfterCompositionSent = false;
+        this.pendingComposedData = 0;
     }
 
     private handleCompositionStart = (e: CompositionEvent) => {
@@ -332,6 +338,21 @@ export class TermWrap {
         this.lastComposedText = e.data || "";
         this.lastCompositionEnd = Date.now();
         this.firstDataAfterCompositionSent = false;
+        // xterm.js's CompositionHelper schedules a setTimeout(0) after compositionend that
+        // reads the committed text from the textarea and dispatches it via onData. Track that
+        // we are expecting that data so handleTermData lets it through even if a new
+        // compositionstart for the next character has already fired.
+        if (e.data && e.data.length > 0) {
+            this.pendingComposedData++;
+            const expected = this.pendingComposedData;
+            setTimeout(() => {
+                // safety net: if the expected data never arrived, decay the counter so it
+                // does not stay elevated forever and allow normal data through wrongly.
+                if (this.pendingComposedData >= expected) {
+                    this.pendingComposedData--;
+                }
+            }, 500);
+        }
     };
 
     async initTerminal() {
@@ -436,13 +457,17 @@ export class TermWrap {
             return;
         }
 
-        // IME fix: suppress isComposing=true events unless they immediately follow
-        // a compositionend (within 20ms). This handles CapsLock input method switching
-        // where the composition buffer gets flushed as a spurious isComposing=true event
-        if (this.isComposing) {
+        // IME handling. xterm.js's CompositionHelper sends the committed composed text via a
+        // setTimeout(0) after compositionend, so the data may arrive AFTER a new
+        // compositionstart for the next character has already fired (isComposing=true again).
+        // We track expected post-composition data with pendingComposedData and let it through
+        // even when isComposing is true.
+        if (this.pendingComposedData > 0) {
+            this.pendingComposedData--;
+        } else if (this.isComposing) {
             const timeSinceCompositionEnd = Date.now() - this.lastCompositionEnd;
             if (timeSinceCompositionEnd > IMEDedupWindowMs) {
-                dlog("Suppressed IME data (composing, not near compositionend):", data);
+                dlog("Suppressed IME data (composing, no pending composed data):", data);
                 return;
             }
         }
