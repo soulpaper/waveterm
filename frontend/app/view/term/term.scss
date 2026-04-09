@@ -135,9 +135,9 @@
 
         // Make the xterm IME composition view actually visible. xterm.js renders this small
         // box at the cursor position to show the in-progress IME text (e.g. Korean ㅎ → 하 → 한).
-        // The default styles are barely visible and z-index 1 lets it sit under other helpers.
-        // We theme it to match the terminal and bump z-index so the user can clearly see what
-        // they are composing.
+        // The default styles in xterm.css are barely visible and z-index 1 lets it sit under
+        // other helpers. We theme it to match the terminal and bump z-index so the user can
+        // clearly see what they are composing.
         .xterm-helpers {
             z-index: 10;
         }
@@ -151,35 +151,12 @@
             z-index: 20 !important;
         }
 
-        .xterm-viewport {
-            &::-webkit-scrollbar {
-                width: 6px; /* this needs to match fitAddon.scrollbarWidth in termwrap.ts */
-                height: 6px;
-            }
-
-            &::-webkit-scrollbar-track {
-                background-color: var(--scrollbar-background-color);
-            }
-
-            &::-webkit-scrollbar-thumb {
-                background-color: transparent;
-                border-radius: 4px;
-                margin: 0 1px 0 1px;
-
-                &:hover {
-                    background-color: var(--scrollbar-thumb-hover-color) !important;
-                }
-
-                &:active {
-                    background-color: var(--scrollbar-thumb-active-color) !important;
-                }
-            }
+        .xterm-decoration-overview-ruler {
+            display: none !important;
         }
 
-        &:hover {
-            .xterm-viewport::-webkit-scrollbar-thumb {
-                background-color: var(--scrollbar-thumb-color);
-            }
+        .xterm-viewport {
+            background-color: transparent;
         }
     }
 }

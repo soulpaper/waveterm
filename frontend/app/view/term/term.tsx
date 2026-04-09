@@ -1,17 +1,19 @@
-// Copyright 2025, Command Line Inc.
+// Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import ClaudeColorSvg from "@/app/asset/claude-color.svg";
 import { SubBlock } from "@/app/block/block";
 import type { BlockNodeModel } from "@/app/block/blocktypes";
 import { NullErrorBoundary } from "@/app/element/errorboundary";
 import { Search, useSearch } from "@/app/element/search";
 import { ContextMenuModel } from "@/app/store/contextmenu";
+import { globalStore } from "@/app/store/jotaiStore";
 import { useTabModel } from "@/app/store/tab-model";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { TermViewModel } from "@/app/view/term/term-model";
-import { atoms, getOverrideConfigAtom, getSettingsPrefixAtom, globalStore, WOS } from "@/store/global";
+import { atoms, getOverrideConfigAtom, getSettingsPrefixAtom, WOS } from "@/store/global";
 import { fireAndForget, useAtomValueSafe } from "@/util/util";
 import { computeBgStyleFromMeta } from "@/util/waveutil";
 import { ISearchOptions } from "@xterm/addon-search";
@@ -33,6 +35,16 @@ interface TerminalViewProps {
     blockId: string;
     model: TermViewModel;
 }
+
+const TermClaudeIcon = React.memo(() => {
+    return (
+        <div className="[&_svg]:w-[15px] [&_svg]:h-[15px]" aria-hidden="true">
+            <ClaudeColorSvg />
+        </div>
+    );
+});
+
+TermClaudeIcon.displayName = "TermClaudeIcon";
 
 const TermResyncHandler = React.memo(({ blockId, model }: TerminalViewProps) => {
     const connStatus = jotai.useAtomValue(model.connStatus);
@@ -61,7 +73,7 @@ const TermVDomToolbarNode = ({ vdomBlockId, blockId, model }: TerminalViewProps 
         const unsub = waveEventSubscribeSingle({
             eventType: "blockclose",
             scope: WOS.makeORef("block", vdomBlockId),
-            handler: (event) => {
+            handler: (_event) => {
                 RpcApi.SetMetaCommand(TabRpcClient, {
                     oref: WOS.makeORef("block", blockId),
                     meta: {
@@ -104,7 +116,7 @@ const TermVDomNodeSingleId = ({ vdomBlockId, blockId, model }: TerminalViewProps
         const unsub = waveEventSubscribeSingle({
             eventType: "blockclose",
             scope: WOS.makeORef("block", vdomBlockId),
-            handler: (event) => {
+            handler: (_event) => {
                 RpcApi.SetMetaCommand(TabRpcClient, {
                     oref: WOS.makeORef("block", blockId),
                     meta: {
@@ -312,6 +324,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
                 macOptionIsMeta: termMacOptionIsMeta,
                 cursorStyle: termCursorStyle,
                 cursorBlink: termCursorBlink,
+                overviewRuler: { width: 6 },
             },
             {
                 keydownHandler: model.handleTerminalKeydown.bind(model),
@@ -324,9 +337,6 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         model.termRef.current = termWrap;
         setTermWrapInst(termWrap);
         const rszObs = new ResizeObserver(() => {
-            if (termWrap.cachedAtBottomForResize == null) {
-                termWrap.cachedAtBottomForResize = termWrap.wasRecentlyAtBottom();
-            }
             termWrap.handleResize_debounced();
         });
         rszObs.observe(connectElemRef.current);
@@ -444,29 +454,24 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
 
     const handleDrop = React.useCallback(
         (e: React.DragEvent) => {
-            // Let react-dnd handle FILE_ITEM drags
-            if (!e.dataTransfer.files.length && !e.dataTransfer.getData("text/plain")) {
+            // Native OS file drops are handled by termwrap.ts at the connectElem level
+            // (using webUtils.getPathForFile via the preload bridge, since File.path was
+            // removed in Electron 32). We only need to clear the visual hover state here
+            // and forward text drops; FILE_ITEM drags from the internal file browser are
+            // handled separately via react-dnd above.
+            if (e.dataTransfer.files.length > 0) {
+                setIsDragOver(false);
+                return;
+            }
+            const text = e.dataTransfer.getData("text/plain");
+            if (!text) {
                 return;
             }
             e.preventDefault();
             e.stopPropagation();
             setIsDragOver(false);
-
-            // Native file drops (from OS file manager)
-            if (e.dataTransfer.files.length > 0) {
-                const files = Array.from(e.dataTransfer.files);
-                const paths = files.map((f) => shellQuotePath((f as any).path || f.name)).join(" ");
-                model.termRef.current?.terminal.paste(paths + " ");
-                model.giveFocus();
-                return;
-            }
-
-            // Text drops
-            const text = e.dataTransfer.getData("text/plain");
-            if (text) {
-                model.termRef.current?.terminal.paste(text);
-                model.giveFocus();
-            }
+            model.termRef.current?.terminal.paste(text);
+            model.giveFocus();
         },
         [model]
     );
@@ -495,4 +500,4 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
     );
 };
 
-export { TerminalView };
+export { TermClaudeIcon, TerminalView };

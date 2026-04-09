@@ -134,6 +134,7 @@ declare global {
         setBuilderWindowAppId: (appId: string) => void; // set-builder-window-appid
         doRefresh: () => void; // do-refresh
         execCommand: (cmd: string, args: string[], cwd?: string) => Promise<{ stdout: string; stderr: string }>; // exec-command
+        getPathForFile: (file: File) => string; // webUtils.getPathForFile
         saveTextFile: (fileName: string, content: string) => Promise<boolean>; // save-text-file
         setIsActive: () => Promise<void>; // set-is-active
     };

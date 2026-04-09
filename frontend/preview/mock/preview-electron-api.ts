@@ -59,6 +59,7 @@ const previewElectronApi: ElectronApi = {
     doRefresh: () => {},
     execCommand: (_cmd: string, _args: string[], _cwd?: string) =>
         Promise.resolve({ stdout: "", stderr: "" }),
+    getPathForFile: (_file: File) => "",
     saveTextFile: (_fileName: string, _content: string) => Promise.resolve(false),
     setIsActive: async () => {},
 };
