@@ -94,5 +94,16 @@
                 "view": "claudesessions"
             }
         }
+    },
+    "defwidget@editor": {
+        "display:order": 5,
+        "icon": "file-code",
+        "label": "editor",
+        "description": "Simple code editor with syntax highlighting",
+        "blockdef": {
+            "meta": {
+                "view": "simpleeditor"
+            }
+        }
     }
 }

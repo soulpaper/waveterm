@@ -34,6 +34,9 @@ export function blockViewToIcon(view: string): string {
     if (view == "claudesessions") {
         return "message-bot";
     }
+    if (view == "simpleeditor") {
+        return "file-code";
+    }
     return "square";
 }
 
@@ -61,6 +64,9 @@ export function blockViewToName(view: string): string {
     }
     if (view == "claudesessions") {
         return "Claude Sessions";
+    }
+    if (view == "simpleeditor") {
+        return "Editor";
     }
     return view;
 }

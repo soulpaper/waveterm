@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld("api", {
     openBuilder: (appId?: string) => ipcRenderer.send("open-builder", appId),
     setBuilderWindowAppId: (appId: string) => ipcRenderer.send("set-builder-window-appid", appId),
     doRefresh: () => ipcRenderer.send("do-refresh"),
+    execCommand: (cmd: string, args: string[], cwd?: string) =>
+        ipcRenderer.invoke("exec-command", cmd, args, cwd), // exec-command
     saveTextFile: (fileName: string, content: string) => ipcRenderer.invoke("save-text-file", fileName, content),
     setIsActive: () => ipcRenderer.invoke("set-is-active"),
 });

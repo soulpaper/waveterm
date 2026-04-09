@@ -57,6 +57,8 @@ const previewElectronApi: ElectronApi = {
     openBuilder: (_appId?: string) => {},
     setBuilderWindowAppId: (_appId: string) => {},
     doRefresh: () => {},
+    execCommand: (_cmd: string, _args: string[], _cwd?: string) =>
+        Promise.resolve({ stdout: "", stderr: "" }),
     saveTextFile: (_fileName: string, _content: string) => Promise.resolve(false),
     setIsActive: async () => {},
 };

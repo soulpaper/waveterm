@@ -1,0 +1,297 @@
+.simpleeditor-view {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+
+    &.drag-over {
+        outline: 2px solid var(--accent-color);
+        outline-offset: -2px;
+    }
+}
+
+.simpleeditor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    height: 32px;
+    padding: 0 8px;
+    gap: 8px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--panel-bg-color, rgba(255, 255, 255, 0.02));
+    position: relative;
+
+    .toolbar-left {
+        display: flex;
+        align-items: center;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+    }
+}
+
+.path-display {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--secondary-text-color);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    max-width: 100%;
+    overflow: hidden;
+
+    &:hover {
+        background: var(--highlight-bg-color);
+        color: var(--main-text-color);
+    }
+
+    span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    i {
+        flex-shrink: 0;
+        font-size: 11px;
+    }
+}
+
+.dirty-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    flex-shrink: 0;
+}
+
+.path-input {
+    flex: 1;
+    background: var(--highlight-bg-color);
+    border: 1px solid var(--accent-color);
+    color: var(--main-text-color);
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    outline: none;
+    font-family: "Hack", monospace;
+    min-width: 0;
+}
+
+.lang-select {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--secondary-text-color);
+    font-size: 11px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    outline: none;
+    max-width: 110px;
+
+    &:hover {
+        border-color: var(--accent-color);
+        color: var(--main-text-color);
+    }
+
+    &:focus {
+        border-color: var(--accent-color);
+    }
+
+    option {
+        background: var(--panel-bg-color, #1e1e1e);
+        color: var(--main-text-color);
+    }
+}
+
+.toolbar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: none;
+    color: var(--secondary-text-color);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+
+    &:hover {
+        background: var(--highlight-bg-color);
+        color: var(--main-text-color);
+    }
+
+    &:disabled {
+        opacity: 0.3;
+        cursor: default;
+
+        &:hover {
+            background: none;
+            color: var(--secondary-text-color);
+        }
+    }
+
+    &.save-btn.active {
+        color: var(--accent-color);
+
+        &:hover {
+            background: var(--accent-color);
+            color: white;
+        }
+    }
+
+    &.diff-btn {
+        width: auto;
+        gap: 4px;
+        padding: 0 6px;
+
+        .diff-btn-label {
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        &.active {
+            background: var(--accent-color);
+            color: white;
+        }
+    }
+
+    &.close-diff-btn {
+        color: var(--secondary-text-color);
+
+        &:hover {
+            color: #f87171;
+        }
+    }
+}
+
+.toolbar-diff-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.toolbar-separator {
+    width: 1px;
+    height: 16px;
+    background: var(--border-color);
+    margin: 0 2px;
+}
+
+.toolbar-error {
+    position: absolute;
+    bottom: -28px;
+    left: 8px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 4px;
+    font-size: 11px;
+    color: #f87171;
+    z-index: 10;
+
+    span {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    button {
+        background: none;
+        border: none;
+        color: #f87171;
+        cursor: pointer;
+        padding: 0;
+        font-size: 12px;
+
+        &:hover {
+            color: white;
+        }
+    }
+}
+
+.simpleeditor-editor-wrap {
+    flex: 1;
+    overflow: hidden;
+}
+
+.simpleeditor-loading {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--secondary-text-color);
+    font-size: 13px;
+}
+
+.simpleeditor-drop-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 20;
+    pointer-events: none;
+
+    i {
+        font-size: 36px;
+        color: var(--accent-color);
+    }
+
+    span {
+        font-size: 14px;
+        color: var(--main-text-color);
+        font-weight: 500;
+    }
+}
+
+// Header overrides
+.simpleeditor-filename {
+    font-size: 12px;
+    font-family: "Hack", monospace;
+
+    &.is-dirty {
+        color: var(--accent-color);
+    }
+}
+
+.simpleeditor-lang-badge {
+    font-size: 10px;
+    color: var(--secondary-text-color);
+    opacity: 0.6;
+    margin-left: 4px;
+}
+
+.simpleeditor-diff-badge {
+    font-size: 10px;
+    color: var(--accent-color);
+    font-weight: 600;
+    margin-left: 4px;
+    padding: 1px 5px;
+    border: 1px solid var(--accent-color);
+    border-radius: 3px;
+}

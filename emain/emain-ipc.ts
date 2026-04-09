@@ -489,6 +489,29 @@ export function initIpcHandlers() {
         event.sender.reloadIgnoringCache();
     });
 
+    electron.ipcMain.handle(
+        "exec-command",
+        async (_event, cmd: string, args: string[], cwd?: string): Promise<{ stdout: string; stderr: string }> => {
+            const resolvedCwd = cwd
+                ? cwd.replace(/^~/, electronApp.getPath("home"))
+                : electronApp.getPath("home");
+            return new Promise((resolve, reject) => {
+                child_process.execFile(
+                    cmd,
+                    args,
+                    { cwd: resolvedCwd, timeout: 10000, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8" },
+                    (error, stdout, stderr) => {
+                        if (error) {
+                            reject(new Error(stderr || error.message));
+                        } else {
+                            resolve({ stdout: stdout as string, stderr: stderr as string });
+                        }
+                    }
+                );
+            });
+        }
+    );
+
     electron.ipcMain.handle("save-text-file", async (event, fileName: string, content: string) => {
         const ww = electron.BrowserWindow.fromWebContents(event.sender);
         if (ww == null) {
