@@ -87,6 +87,7 @@ export class ClaudeSessionsViewModel implements ViewModel {
                 } catch {
                     continue;
                 }
+                if (!files || files.length === 0) continue;
 
                 for (const file of files) {
                     if (!file.name?.endsWith(".jsonl")) continue;
