@@ -76,8 +76,8 @@
     },
     "defwidget@claudesessions": {
         "display:order": 4,
-        "icon": "message-bot",
-        "label": "Claude Sessions",
+        "icon": "clock-rotate-left",
+        "label": "Sessions",
         "description": "View and resume incomplete Claude Code sessions",
         "blockdef": {
             "meta": {
