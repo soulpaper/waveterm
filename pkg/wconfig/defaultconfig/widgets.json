@@ -85,8 +85,19 @@
             }
         }
     },
-    "defwidget@editor": {
+    "defwidget@jiratasks": {
         "display:order": 5,
+        "icon": "list-check",
+        "label": "Jira Tasks",
+        "description": "View and manage Jira tasks",
+        "blockdef": {
+            "meta": {
+                "view": "jiratasks"
+            }
+        }
+    },
+    "defwidget@editor": {
+        "display:order": 6,
         "icon": "file-code",
         "label": "editor",
         "description": "Simple code editor with syntax highlighting",
