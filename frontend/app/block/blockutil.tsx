@@ -46,7 +46,10 @@ export function blockViewToIcon(view: string): string {
         return "microchip";
     }
     if (view == "claudesessions") {
-        return "message-bot";
+        return "clock-rotate-left";
+    }
+    if (view == "jiratasks") {
+        return "list-check";
     }
     if (view == "simpleeditor") {
         return "file-code";
@@ -80,7 +83,10 @@ export function blockViewToName(view: string): string {
         return "Processes";
     }
     if (view == "claudesessions") {
-        return "Claude Sessions";
+        return "Sessions";
+    }
+    if (view == "jiratasks") {
+        return "Jira Tasks";
     }
     if (view == "simpleeditor") {
         return "Editor";

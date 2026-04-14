@@ -6,7 +6,7 @@ import { createBlock, globalStore } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { TabModel } from "@/app/store/tab-model";
-import { fireAndForget } from "@/util/util";
+import { base64ToString, fireAndForget } from "@/util/util";
 import clsx from "clsx";
 import { atom, Atom, PrimitiveAtom, useAtomValue } from "jotai";
 import { useEffect } from "react";
@@ -32,8 +32,8 @@ export class ClaudeSessionsViewModel implements ViewModel {
     blockId: string;
     nodeModel: BlockNodeModel;
     tabModel: TabModel;
-    viewIcon: Atom<string> = atom("message-bot");
-    viewName: Atom<string> = atom("Claude Sessions");
+    viewIcon: Atom<string> = atom("clock-rotate-left");
+    viewName: Atom<string> = atom("Sessions");
     viewComponent = ClaudeSessionsView;
 
     sessionsAtom: PrimitiveAtom<ClaudeSessionInfo[]> = atom<ClaudeSessionInfo[]>([]);
@@ -111,15 +111,15 @@ export class ClaudeSessionsViewModel implements ViewModel {
                                 at: { offset: tailOffset, size: TAIL_CHUNK_SIZE },
                             });
 
-                            const headStr = headData.data64 ? atob(headData.data64) : "";
-                            const tailStr = tailData.data64 ? atob(tailData.data64) : "";
+                            const headStr = headData.data64 ? base64ToString(headData.data64) : "";
+                            const tailStr = tailData.data64 ? base64ToString(tailData.data64) : "";
                             parsed = parseSessionJsonlPartial(headStr, tailStr);
                         } else {
                             // Small file: read entirely
                             const fileData = await RpcApi.FileReadCommand(TabRpcClient, {
                                 info: { path: `${projectsPath}/${projName}/${file.name}` },
                             });
-                            const raw = fileData.data64 ? atob(fileData.data64) : "";
+                            const raw = fileData.data64 ? base64ToString(fileData.data64) : "";
                             parsed = parseSessionJsonl(raw);
                         }
 

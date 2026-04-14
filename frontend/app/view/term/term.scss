@@ -133,21 +133,18 @@
     .terminal {
         width: 100%;
 
-        // Make the xterm IME composition view actually visible. xterm.js renders this small
-        // box at the cursor position to show the in-progress IME text (e.g. Korean ㅎ → 하 → 한).
-        // The default styles in xterm.css are barely visible and z-index 1 lets it sit under
-        // other helpers. We theme it to match the terminal and bump z-index so the user can
-        // clearly see what they are composing.
+        // IME composition: render inline at the cursor, matching terminal text exactly
+        // so Korean/CJK input looks identical to English typing (no popup box).
         .xterm-helpers {
             z-index: 10;
         }
         .composition-view {
             background: var(--main-bg-color, #000) !important;
             color: var(--main-text-color, #fff) !important;
-            border: 1px solid var(--accent-color, #58c4dc);
-            border-radius: 2px;
-            padding: 0 3px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+            border: none !important;
+            border-radius: 0;
+            padding: 0;
+            box-shadow: none;
             z-index: 20 !important;
         }
 

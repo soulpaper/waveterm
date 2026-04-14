@@ -1,0 +1,209 @@
+.jiratasks-view {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    padding: 8px;
+    gap: 8px;
+}
+
+.jiratasks-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    padding: 0 4px;
+
+    .toolbar-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .issue-count {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+    }
+
+    .fetched-at {
+        font-size: 11px;
+        color: var(--secondary-text-color);
+        opacity: 0.5;
+    }
+
+    .mode-toggle {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        color: var(--secondary-text-color);
+        cursor: pointer;
+
+        i {
+            font-size: 10px;
+        }
+
+        &:hover {
+            background: var(--highlight-bg-color);
+        }
+
+        &.mode-new {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        &.mode-current {
+            border-color: #a78bfa;
+            color: #a78bfa;
+        }
+    }
+}
+
+.jiratasks-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: var(--scrollbar-thumb-color);
+        border-radius: 3px;
+    }
+}
+
+.jiratasks-empty,
+.jiratasks-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px 16px;
+    color: var(--secondary-text-color);
+    font-size: 13px;
+}
+
+.jiratasks-error {
+    color: var(--error-color, #f87171);
+}
+
+.jira-issue-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--panel-bg-color, rgba(255, 255, 255, 0.03));
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+
+    &:hover {
+        background: var(--highlight-bg-color);
+        border-color: var(--accent-color);
+    }
+
+    &.status-inprogress {
+        border-left: 3px solid #3b82f6;
+    }
+
+    &.status-todo {
+        border-left: 3px solid #94a3b8;
+    }
+
+    &.status-done {
+        border-left: 3px solid #22c55e;
+        opacity: 0.6;
+    }
+}
+
+.issue-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.issue-key {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent-color);
+    font-family: var(--termfontfamily, monospace);
+}
+
+.issue-time {
+    font-size: 11px;
+    color: var(--secondary-text-color);
+    opacity: 0.7;
+}
+
+.issue-summary {
+    font-size: 13px;
+    color: var(--main-text-color);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.issue-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--secondary-text-color);
+    opacity: 0.7;
+
+    i {
+        margin-right: 3px;
+    }
+}
+
+.issue-status {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+
+    &.status-inprogress {
+        background: #3b82f6;
+    }
+
+    &.status-todo {
+        background: #94a3b8;
+    }
+
+    &.status-done {
+        background: #22c55e;
+    }
+}
+
+.issue-priority {
+    .fa-angles-up, .fa-angle-up {
+        color: #ef4444;
+    }
+
+    .fa-angle-down, .fa-angles-down {
+        color: #3b82f6;
+    }
+}

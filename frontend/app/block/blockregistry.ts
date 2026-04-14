@@ -5,6 +5,7 @@ import { BlockNodeModel } from "@/app/block/blocktypes";
 import type { TabModel } from "@/app/store/tab-model";
 import { AiFileDiffViewModel } from "@/app/view/aifilediff/aifilediff";
 import { ClaudeSessionsViewModel } from "@/app/view/claudesessions/claudesessions";
+import { JiraTasksViewModel } from "@/app/view/jiratasks/jiratasks";
 import { LauncherViewModel } from "@/app/view/launcher/launcher";
 import { PreviewModel } from "@/app/view/preview/preview-model";
 import { ProcessViewerViewModel } from "@/app/view/processviewer/processviewer";
@@ -38,6 +39,7 @@ BlockRegistry.set("aifilediff", AiFileDiffViewModel);
 BlockRegistry.set("waveconfig", WaveConfigViewModel);
 BlockRegistry.set("processviewer", ProcessViewerViewModel);
 BlockRegistry.set("claudesessions", ClaudeSessionsViewModel);
+BlockRegistry.set("jiratasks", JiraTasksViewModel);
 BlockRegistry.set("simpleeditor", SimpleEditorModel);
 
 function makeDefaultViewModel(viewType: string): ViewModel {
