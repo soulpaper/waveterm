@@ -147,7 +147,10 @@ func Refresh(ctx context.Context, opts RefreshOpts) (*RefreshReport, error) {
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		return nil, fmt.Errorf("jira refresh: mkdir cache parent: %v", err)
 	}
-	if err := fileutil.AtomicWriteFile(cachePath, data, 0o644); err != nil {
+	// Mode 0o600: cache contains issue summaries, descriptions, comment bodies,
+	// and accountId — match config.json's 0o600 to avoid leaking to other local
+	// users on a shared workstation. (WR-02)
+	if err := fileutil.AtomicWriteFile(cachePath, data, 0o600); err != nil {
 		return nil, fmt.Errorf("jira refresh: write cache: %v", err)
 	}
 	progress(opts.OnProgress, "write", 1, 1)
