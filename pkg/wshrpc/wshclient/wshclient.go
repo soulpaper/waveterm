@@ -508,6 +508,12 @@ func GetWaveAIRateLimitCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*uctype
 	return resp, err
 }
 
+// command "jirarefresh", wshserver.JiraRefreshCommand
+func JiraRefreshCommand(w *wshutil.WshRpc, data wshrpc.CommandJiraRefreshData, opts *wshrpc.RpcOpts) (wshrpc.CommandJiraRefreshRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[wshrpc.CommandJiraRefreshRtnData](w, "jirarefresh", data, opts)
+	return resp, err
+}
+
 // command "jobcmdexited", wshserver.JobCmdExitedCommand
 func JobCmdExitedCommand(w *wshutil.WshRpc, data wshrpc.CommandJobCmdExitedData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "jobcmdexited", data, opts)

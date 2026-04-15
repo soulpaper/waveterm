@@ -510,6 +510,12 @@ export class RpcApiType {
         return client.wshRpcCall("getwaveairatelimit", null, opts);
     }
 
+    // command "jirarefresh" [call]
+    JiraRefreshCommand(client: WshClient, data: CommandJiraRefreshData, opts?: RpcOpts): Promise<CommandJiraRefreshRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jirarefresh", data, opts);
+        return client.wshRpcCall("jirarefresh", data, opts);
+    }
+
     // command "jobcmdexited" [call]
     JobCmdExitedCommand(client: WshClient, data: CommandJobCmdExitedData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jobcmdexited", data, opts);

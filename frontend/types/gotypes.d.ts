@@ -418,6 +418,19 @@ declare global {
         chatid: string;
     };
 
+    // wshrpc.CommandJiraRefreshData
+    type CommandJiraRefreshData = object;
+
+    // wshrpc.CommandJiraRefreshRtnData
+    type CommandJiraRefreshRtnData = {
+        issuecount: number;
+        attachmentcount: number;
+        commentcount: number;
+        elapsedms: number;
+        cachepath: string;
+        fetchedat: string;
+    };
+
     // wshrpc.CommandJobCmdExitedData
     type CommandJobCmdExitedData = {
         jobid: string;
