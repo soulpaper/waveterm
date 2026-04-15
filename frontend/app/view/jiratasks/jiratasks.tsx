@@ -228,6 +228,8 @@ export class JiraTasksViewModel implements ViewModel {
     issuesAtom: PrimitiveAtom<JiraIssue[]> = atom<JiraIssue[]>([]);
     loadingAtom: PrimitiveAtom<boolean> = atom(false);
     errorAtom: PrimitiveAtom<string | null> = atom<string | null>(null) as PrimitiveAtom<string | null>;
+    // D-UI-02: post-hoc refresh summary, auto-clears after 5s.
+    refreshProgressAtom: PrimitiveAtom<string | null> = atom<string | null>(null) as PrimitiveAtom<string | null>;
     launchModeAtom: PrimitiveAtom<LaunchMode> = atom<LaunchMode>("current");
     fetchedAtAtom: PrimitiveAtom<string> = atom("");
     expandedKeyAtom: PrimitiveAtom<string | null> = atom<string | null>(null) as PrimitiveAtom<string | null>;
@@ -365,7 +367,7 @@ export class JiraTasksViewModel implements ViewModel {
             buttons.push({
                 elemtype: "iconbutton",
                 icon: "cloud-arrow-down",
-                title: "Jira에서 새로고침 (Claude에게 요청)",
+                title: "Jira에서 새로고침",
                 click: () => fireAndForget(() => this.requestJiraRefresh()),
             });
             buttons.push({
@@ -379,25 +381,27 @@ export class JiraTasksViewModel implements ViewModel {
     }
 
     async requestJiraRefresh(): Promise<void> {
-        const target = this.resolveTargetTerminal();
-        const cli = this.getCli();
-        const prompt = "jira 이슈 새로고침";
-        const cmd = `${cli} "${prompt}"\r`;
-        if (target) {
-            await RpcApi.ControllerInputCommand(TabRpcClient, {
-                blockid: target,
-                inputdata64: stringToBase64(cmd),
-            });
-        } else {
-            await createBlock({
-                meta: {
-                    view: "term",
-                    controller: "cmd",
-                    cmd: `${cli} "${prompt}"`,
-                    "cmd:runonstart": true,
-                    "cmd:interactive": true,
-                },
-            });
+        globalStore.set(this.loadingAtom, true);
+        globalStore.set(this.errorAtom, null);
+        try {
+            const rtn = await RpcApi.JiraRefreshCommand(TabRpcClient, {});
+            // Success: reload cache so issuesAtom reflects new data, then surface a summary.
+            await this.loadFromCache();
+            const elapsedSec = (rtn.elapsedms / 1000).toFixed(1);
+            const summary = `${rtn.issuecount} 이슈 · ${elapsedSec}s`;
+            globalStore.set(this.refreshProgressAtom, summary);
+            // Auto-clear after 5s per D-UI-02.
+            setTimeout(() => {
+                // Guard: don't clear a newer refresh's summary.
+                if (globalStore.get(this.refreshProgressAtom) === summary) {
+                    globalStore.set(this.refreshProgressAtom, null);
+                }
+            }, 5000);
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            globalStore.set(this.errorAtom, msg);
+        } finally {
+            globalStore.set(this.loadingAtom, false);
         }
     }
 
@@ -901,6 +905,7 @@ function JiraTasksView({ model }: { model: JiraTasksViewModel }) {
     const issues = useAtomValue(model.filteredIssuesAtom);
     const loading = useAtomValue(model.loadingAtom);
     const error = useAtomValue(model.errorAtom);
+    const refreshProgress = useAtomValue(model.refreshProgressAtom);
     const launchMode = useAtomValue(model.launchModeAtom);
     const fetchedAt = useAtomValue(model.fetchedAtAtom);
     const expandedKey = useAtomValue(model.expandedKeyAtom);
@@ -1046,7 +1051,7 @@ function JiraTasksView({ model }: { model: JiraTasksViewModel }) {
                             className="filter-select"
                             value={refreshInterval}
                             onChange={(e) => model.setRefreshInterval(Number(e.target.value))}
-                            title="캐시 파일을 주기적으로 다시 읽습니다 (Jira→캐시 갱신은 Claude에게 요청)"
+                            title="캐시 파일을 주기적으로 다시 읽습니다 (Jira→캐시 갱신은 ☁️ 버튼으로 수동 실행)"
                         >
                             {REFRESH_OPTIONS.map((o) => (
                                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -1067,6 +1072,12 @@ function JiraTasksView({ model }: { model: JiraTasksViewModel }) {
                     <div className="jiratasks-error">
                         <i className="fa-solid fa-triangle-exclamation" />
                         <span>{error}</span>
+                    </div>
+                )}
+                {refreshProgress && (
+                    <div className="jira-refresh-summary">
+                        <i className="fa-solid fa-circle-check" />
+                        <span>{refreshProgress}</span>
                     </div>
                 )}
                 {!loading && !error && issues.length === 0 && (
