@@ -10,7 +10,12 @@ import { getLayoutModelForStaticTab } from "@/layout/index";
 import { base64ToString, stringToBase64, fireAndForget } from "@/util/util";
 import clsx from "clsx";
 import { atom, Atom, PrimitiveAtom, useAtomValue } from "jotai";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+    classifyErrorMessage,
+    CLAUDE_SETUP_PROMPT,
+    ATLASSIAN_PAT_URL,
+} from "./jiratasks-errorstate";
 import "./jiratasks.scss";
 
 interface TerminalOption {
@@ -970,6 +975,38 @@ function JiraTasksView({ model }: { model: JiraTasksViewModel }) {
     const handleCliChange = useCallback((v: string) => model.setAnalyzeCli(v), [model]);
     const handleExtraPromptChange = useCallback((v: string) => model.setExtraPrompt(v), [model]);
 
+    // --- Error-state card handlers (Phase 4 Plan 01, D-STATE-01..04) ---
+    // Local (per-view) toast for clipboard-copy confirmation. Not persisted — a
+    // transient 3s hint is enough per D-UI-03. Using React state keeps it scoped
+    // to this view instance (multiple widget blocks don't cross-contaminate).
+    const [copyToast, setCopyToast] = useState<string | null>(null);
+
+    const handleCopyClaudePrompt = useCallback(() => {
+        fireAndForget(async () => {
+            // navigator.clipboard is always available in the renderer (Electron).
+            await navigator.clipboard.writeText(CLAUDE_SETUP_PROMPT);
+            setCopyToast("클립보드에 복사됨 — Claude 터미널에 붙여넣기");
+            setTimeout(() => setCopyToast(null), 3000);
+        });
+    }, []);
+
+    const handleOpenPatPage = useCallback(() => {
+        fireAndForget(() => createBlock({ meta: { view: "web", url: ATLASSIAN_PAT_URL } }));
+    }, []);
+
+    const handleOpenReadme = useCallback(() => {
+        // Internal docs route — the page itself is produced by Plan 04-02.
+        // Opens in a Waveterm webview block (matches openIssueInBrowser pattern).
+        fireAndForget(() => createBlock({ meta: { view: "web", url: "https://docs.waveterm.dev/jira-widget" } }));
+    }, []);
+
+    const handleRetry = useCallback(() => {
+        fireAndForget(() => model.requestJiraRefresh());
+    }, [model]);
+
+    const errorState = classifyErrorMessage(error);
+    const isEmptyCache = error?.startsWith("캐시 파일이 비어있습니다") ?? false;
+
     const statusSet = new Set(statusFilter);
     const hiddenCount = allIssues.length - issues.length;
 
@@ -1079,10 +1116,95 @@ function JiraTasksView({ model }: { model: JiraTasksViewModel }) {
                         <span>로딩 중...</span>
                     </div>
                 )}
-                {error && (
-                    <div className="jiratasks-error">
-                        <i className="fa-solid fa-triangle-exclamation" />
-                        <span>{error}</span>
+                {/*
+                  * Error-state cards (Phase 4 Plan 01, D-STATE-01..04 / D-UI-02..04).
+                  * Legacy single-line banner removed per D-REG-01 — each failure
+                  * mode now shows a distinct card with a fix action. Render is
+                  * gated on `!loading` so the spinner doesn't overlap.
+                  */}
+                {!loading && errorState === "setup" && (
+                    <div className="jiratasks-state-card state-setup">
+                        <div className="state-icon"><i className="fa-solid fa-gear" /></div>
+                        <div className="state-title">
+                            {isEmptyCache ? "아직 새로고침하지 않았습니다" : "Jira 설정 필요"}
+                        </div>
+                        <div className="state-body">
+                            {isEmptyCache ? (
+                                <>☁️ 버튼을 눌러 Jira에서 이슈를 가져오세요.</>
+                            ) : (
+                                <>
+                                    <code>~/.config/waveterm/jira.json</code> 파일이 필요합니다.
+                                    아래 버튼으로 Claude에게 설정을 요청하거나 README를 확인하세요.
+                                </>
+                            )}
+                        </div>
+                        <div className="state-ctas">
+                            {isEmptyCache ? (
+                                <button className="cta cta-primary" onClick={handleRetry}>
+                                    <i className="fa-solid fa-cloud-arrow-down" /> 새로고침
+                                </button>
+                            ) : (
+                                <>
+                                    <button className="cta cta-primary" onClick={handleCopyClaudePrompt}>
+                                        <i className="fa-solid fa-clipboard" /> Claude에게 자동 설정 요청
+                                    </button>
+                                    <button className="cta cta-secondary" onClick={handleOpenReadme}>
+                                        <i className="fa-solid fa-book" /> README 보기
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                        {copyToast && <div className="state-toast">{copyToast}</div>}
+                    </div>
+                )}
+                {!loading && errorState === "auth" && (
+                    <div className="jiratasks-state-card state-auth">
+                        <div className="state-icon"><i className="fa-solid fa-key" /></div>
+                        <div className="state-title">인증 실패 — PAT 재발급 필요</div>
+                        <div className="state-body">
+                            <code>apiToken</code>이 유효하지 않거나 만료되었습니다.
+                            Atlassian에서 새 API token을 발급받아{" "}
+                            <code>~/.config/waveterm/jira.json</code>에 붙여넣으세요.
+                        </div>
+                        <div className="state-ctas">
+                            <button className="cta cta-primary" onClick={handleOpenPatPage}>
+                                <i className="fa-solid fa-key" /> Atlassian PAT 페이지 열기
+                            </button>
+                            <button className="cta cta-secondary" onClick={handleOpenReadme}>
+                                <i className="fa-solid fa-book" /> jira.json 편집 안내
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {!loading && errorState === "network" && (
+                    <div className="jiratasks-state-card state-network">
+                        <div className="state-icon"><i className="fa-solid fa-wifi" /></div>
+                        <div className="state-title">네트워크 오류</div>
+                        <div className="state-body">
+                            <span className="error-raw">{error}</span>
+                        </div>
+                        <div className="state-ctas">
+                            <button className="cta cta-primary" onClick={handleRetry}>
+                                <i className="fa-solid fa-rotate-right" /> 다시 시도
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {!loading && errorState === "unknown" && (
+                    <div className="jiratasks-state-card state-unknown">
+                        <div className="state-icon"><i className="fa-solid fa-triangle-exclamation" /></div>
+                        <div className="state-title">새로고침 실패</div>
+                        <div className="state-body">
+                            <span className="error-raw">{error}</span>
+                        </div>
+                        <div className="state-ctas">
+                            <button className="cta cta-primary" onClick={handleRetry}>
+                                <i className="fa-solid fa-rotate-right" /> 다시 시도
+                            </button>
+                            <button className="cta cta-secondary" onClick={handleOpenReadme}>
+                                <i className="fa-solid fa-book" /> README
+                            </button>
+                        </div>
                     </div>
                 )}
                 {refreshProgress && (
