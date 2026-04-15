@@ -381,6 +381,11 @@ export class JiraTasksViewModel implements ViewModel {
     }
 
     async requestJiraRefresh(): Promise<void> {
+        // WR-01: guard against concurrent refresh calls (e.g., double-click on ☁️ button).
+        // Two in-flight JiraRefreshCommand RPCs would race on ~/.config/waveterm/jira-cache.json.
+        if (globalStore.get(this.loadingAtom)) {
+            return;
+        }
         globalStore.set(this.loadingAtom, true);
         globalStore.set(this.errorAtom, null);
         try {
