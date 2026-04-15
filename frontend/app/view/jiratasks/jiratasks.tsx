@@ -392,6 +392,12 @@ export class JiraTasksViewModel implements ViewModel {
             const rtn = await RpcApi.JiraRefreshCommand(TabRpcClient, {});
             // Success: reload cache so issuesAtom reflects new data, then surface a summary.
             await this.loadFromCache();
+            // WR-02: loadFromCache() swallows its own errors into errorAtom. If the cache
+            // re-read failed, do not overwrite the error banner with a success summary —
+            // otherwise the user sees both "N 이슈 · Xs" and the error banner simultaneously.
+            if (globalStore.get(this.errorAtom) !== null) {
+                return;
+            }
             const elapsedSec = (rtn.elapsedms / 1000).toFixed(1);
             const summary = `${rtn.issuecount} 이슈 · ${elapsedSec}s`;
             globalStore.set(this.refreshProgressAtom, summary);
