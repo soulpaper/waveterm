@@ -1,0 +1,51 @@
+{
+  "cloudId": "cloud-xxx",
+  "baseUrl": "<<REPLACED-AT-TEST>>",
+  "accountId": "acc-dev-os",
+  "fetchedAt": "NORMALIZED",
+  "issues": [
+    {
+      "key": "ITSM-1",
+      "id": "10001",
+      "summary": "Example issue",
+      "description": "Hello world",
+      "status": "In Progress",
+      "statusCategory": "indeterminate",
+      "issueType": "Bug",
+      "priority": "High",
+      "projectKey": "ITSM",
+      "projectName": "IT Service Management",
+      "updated": "2026-04-14T15:30:00.000+0000",
+      "created": "2026-04-01T08:00:00.000+0000",
+      "webUrl": "<<REPLACED-AT-TEST>>/browse/ITSM-1",
+      "attachments": [
+        {
+          "id": "att1",
+          "filename": "screenshot.png",
+          "mimeType": "image/png",
+          "size": 12345,
+          "localPath": "",
+          "webUrl": "https://example.atlassian.net/rest/api/3/attachment/content/att1"
+        }
+      ],
+      "comments": [
+        {
+          "id": "c1",
+          "author": "User One",
+          "created": "2026-04-02T09:00:00.000+0000",
+          "updated": "2026-04-02T09:00:00.000+0000",
+          "body": "First"
+        },
+        {
+          "id": "c2",
+          "author": "User Two",
+          "created": "2026-04-03T10:00:00.000+0000",
+          "updated": "2026-04-03T10:30:00.000+0000",
+          "body": "Second"
+        }
+      ],
+      "commentCount": 2,
+      "lastCommentAt": "2026-04-03T10:30:00.000+0000"
+    }
+  ]
+}
