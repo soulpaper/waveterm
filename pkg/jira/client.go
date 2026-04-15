@@ -100,9 +100,12 @@ type Issue struct {
 type IssueFields struct {
 	Summary     string          `json:"summary"`
 	Description json.RawMessage `json:"description"`
-	Status      struct {
-		Name string `json:"name"`
-		ID   string `json:"id"`
+	Status struct {
+		Name           string `json:"name"`
+		ID             string `json:"id"`
+		StatusCategory struct {
+			Key string `json:"key"` // "new" | "indeterminate" | "done" | "undefined" (D-CACHE-08)
+		} `json:"statusCategory"`
 	} `json:"status"`
 	IssueType struct {
 		Name    string `json:"name"`
@@ -159,6 +162,16 @@ type Comment struct {
 	Body    json.RawMessage `json:"body"`
 	Created string          `json:"created"`
 	Updated string          `json:"updated"`
+}
+
+// Myself is the response shape of GET /rest/api/3/myself. Only AccountID is
+// needed for the cache schema (D-CACHE-02, D-FLOW-03); other fields are
+// decoded for future use (e.g. empty-state "Hello {displayName}" UX in Phase 4).
+// Source: https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-myself/
+type Myself struct {
+	AccountID    string `json:"accountId"`
+	DisplayName  string `json:"displayName"`
+	EmailAddress string `json:"emailAddress"`
 }
 
 // searchRequest is the JSON body for POST /rest/api/3/search/jql. Kept
@@ -231,6 +244,28 @@ func (c *Client) GetIssue(ctx context.Context, key string, opts GetIssueOpts) (*
 		return nil, err
 	}
 	return &issue, nil
+}
+
+// GetMyself calls GET /rest/api/3/myself and returns the authenticated user's
+// identity. Per D-ERR-03 the refresh orchestrator treats any error as fatal
+// (we cannot emit a correct cache schema without accountId).
+//
+// Uses the same setCommonHeaders + doJSON path as every other Client method,
+// so Basic auth, User-Agent, Accept, 4xx/5xx -> *APIError classification
+// all work identically to SearchIssues / GetIssue.
+func (c *Client) GetMyself(ctx context.Context) (*Myself, error) {
+	endpoint := c.cfg.BaseUrl + "/rest/api/3/myself"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("jira: build myself request: %w", err)
+	}
+	c.setCommonHeaders(req)
+
+	var me Myself
+	if err := c.doJSON(req, &me); err != nil {
+		return nil, err
+	}
+	return &me, nil
 }
 
 // setCommonHeaders applies Authorization, Accept, and User-Agent to every
