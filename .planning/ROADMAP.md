@@ -48,6 +48,12 @@ Plans:
 
 **Requirements:** JIRA-06, JIRA-07
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 02-01-client-extensions-and-tdd-red-PLAN.md — Additive Client extensions (Status.StatusCategory, GetMyself) + cache_types.go + failing refresh_test.go suite with fixtures and golden file (Nyquist RED)
+- [ ] 02-02-refresh-orchestration-green-PLAN.md — Implement pkg/jira/refresh.go (Refresh/RefreshOpts/RefreshReport + helpers) to turn all Wave-1 tests GREEN
+
 **Deliverables:**
 - `pkg/jira/refresh.go` — orchestration entry point `Refresh(ctx, opts) (*Report, error)`
 - Field mapping: Jira response → `JiraIssue` with description (ADF→md), attachments (metadata only, localPath empty by default), comments (latest 10, body truncated to 2000)
