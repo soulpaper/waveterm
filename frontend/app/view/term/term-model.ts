@@ -151,6 +151,14 @@ export class TermViewModel implements ViewModel {
                     },
                 });
             }
+            const displayName = get(getBlockMetaKeyAtom(this.blockId, "display:name" as any)) as string | undefined;
+            const tagText = displayName ? displayName : `#${this.blockId.slice(0, 6)}`;
+            rtn.push({
+                elemtype: "text",
+                text: tagText,
+                className: "text-[11px] opacity-60 font-mono !py-0 !px-[6px]",
+                noGrow: true,
+            });
             const isCmd = get(this.isCmdController);
             if (isCmd) {
                 const blockMeta = get(this.blockAtom)?.meta;
