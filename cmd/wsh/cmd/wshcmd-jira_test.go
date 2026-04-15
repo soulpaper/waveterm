@@ -12,23 +12,26 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-// TestJiraCmdHelp asserts `wsh jira --help` lists the refresh subcommand.
+// TestJiraCmdHelp asserts `wsh jira --help` lists the refresh subcommand. We
+// call Help() directly on jiraCmd rather than Execute() because Execute() on a
+// subcommand routes through its root and prints the root's help instead.
 func TestJiraCmdHelp(t *testing.T) {
 	buf := &bytes.Buffer{}
 	jiraCmd.SetOut(buf)
 	jiraCmd.SetErr(buf)
-	jiraCmd.SetArgs([]string{"--help"})
 	t.Cleanup(func() {
-		jiraCmd.SetArgs(nil)
 		jiraCmd.SetOut(nil)
 		jiraCmd.SetErr(nil)
 	})
-	if err := jiraCmd.Execute(); err != nil {
-		t.Fatalf("jiraCmd --help returned error: %v", err)
+	if err := jiraCmd.Help(); err != nil {
+		t.Fatalf("jiraCmd.Help() returned error: %v", err)
 	}
 	out := buf.String()
 	if !strings.Contains(out, "refresh") {
-		t.Errorf("expected `jira --help` output to contain \"refresh\", got:\n%s", out)
+		t.Errorf("expected `jira` help output to contain \"refresh\", got:\n%s", out)
+	}
+	if !strings.Contains(out, "jira.json") {
+		t.Errorf("expected `jira` help output to contain the long description mentioning jira.json, got:\n%s", out)
 	}
 }
 
@@ -37,21 +40,19 @@ func TestJiraRefreshHelp(t *testing.T) {
 	buf := &bytes.Buffer{}
 	jiraRefreshCmd.SetOut(buf)
 	jiraRefreshCmd.SetErr(buf)
-	jiraRefreshCmd.SetArgs([]string{"--help"})
 	t.Cleanup(func() {
-		jiraRefreshCmd.SetArgs(nil)
 		jiraRefreshCmd.SetOut(nil)
 		jiraRefreshCmd.SetErr(nil)
 	})
-	if err := jiraRefreshCmd.Execute(); err != nil {
-		t.Fatalf("jiraRefreshCmd --help returned error: %v", err)
+	if err := jiraRefreshCmd.Help(); err != nil {
+		t.Fatalf("jiraRefreshCmd.Help() returned error: %v", err)
 	}
 	out := buf.String()
 	if !strings.Contains(out, "--json") {
-		t.Errorf("expected `jira refresh --help` output to contain \"--json\", got:\n%s", out)
+		t.Errorf("expected `jira refresh` help output to contain \"--json\", got:\n%s", out)
 	}
 	if !strings.Contains(out, "--timeout") {
-		t.Errorf("expected `jira refresh --help` output to contain \"--timeout\", got:\n%s", out)
+		t.Errorf("expected `jira refresh` help output to contain \"--timeout\", got:\n%s", out)
 	}
 }
 
