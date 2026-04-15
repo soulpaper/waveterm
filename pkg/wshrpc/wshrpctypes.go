@@ -82,6 +82,9 @@ type WshRpcInterface interface {
 	BlockInfoCommand(ctx context.Context, blockId string) (*BlockInfoData, error)
 	DebugTermCommand(ctx context.Context, data CommandDebugTermData) (*CommandDebugTermRtnData, error)
 	BlocksListCommand(ctx context.Context, data BlocksListRequest) ([]BlocksListEntry, error)
+
+	// jira
+	JiraRefreshCommand(ctx context.Context, data CommandJiraRefreshData) (CommandJiraRefreshRtnData, error)
 	WaveInfoCommand(ctx context.Context) (*WaveInfoData, error)
 	MacOSVersionCommand(ctx context.Context) (string, error)
 	WshActivityCommand(ct context.Context, data map[string]int) error
@@ -535,6 +538,25 @@ type BlocksListEntry struct {
 	TabId       string              `json:"tabid"`
 	BlockId     string              `json:"blockid"`
 	Meta        waveobj.MetaMapType `json:"meta"`
+}
+
+// CommandJiraRefreshData is the request payload for JiraRefreshCommand.
+// Empty struct in v1 — refresh uses ~/.config/waveterm/jira.json directly.
+// Reserved for future Force / JqlOverride — see CONTEXT D-RPC-02.
+type CommandJiraRefreshData struct {
+}
+
+// CommandJiraRefreshRtnData is the response payload for JiraRefreshCommand.
+// Mirrors jira.RefreshReport but JSON-serializable (time.Duration -> ms,
+// wall clock recorded as RFC3339 string). Field tags follow the lowercased
+// no-separator convention used elsewhere in this file (see BlocksListEntry).
+type CommandJiraRefreshRtnData struct {
+	IssueCount      int    `json:"issuecount"`
+	AttachmentCount int    `json:"attachmentcount"`
+	CommentCount    int    `json:"commentcount"`
+	ElapsedMs       int64  `json:"elapsedms"`
+	CachePath       string `json:"cachepath"`
+	FetchedAt       string `json:"fetchedat"` // RFC3339
 }
 
 type AiMessageData struct {
