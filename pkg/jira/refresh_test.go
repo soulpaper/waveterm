@@ -27,6 +27,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // setFakeHome sets HOME and USERPROFILE to t.TempDir() so Refresh writes
@@ -564,5 +565,100 @@ func TestRefresh_AttachmentWebUrlPassthrough(t *testing.T) {
 	want := "https://example.atlassian.net/rest/api/3/attachment/content/att1"
 	if got != want {
 		t.Errorf("WebUrl: got %q, want %q", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------
+// Test 10: Multi-byte UTF-8 comment body truncates on a rune boundary
+// (WR-01 regression guard — Korean/CJK users)
+//
+// Build a body from "한" (U+D55C, 3 bytes in UTF-8). 700 runes × 3 bytes =
+// 2100 bytes, which is > the 2000-byte cap. A naive byte-slice at 2000
+// would land in the middle of the 667th rune (2000 / 3 = 666 remainder 2)
+// and produce invalid UTF-8. The correct behavior is to walk back to the
+// rune boundary at byte 1998, yielding 666 complete runes.
+// ---------------------------------------------------------------------
+
+func TestRefresh_CommentBodyTruncationIsUTF8Safe(t *testing.T) {
+	setFakeHome(t)
+
+	// 700 copies of "한" → 2100 bytes.
+	bigBody := strings.Repeat("한", 700)
+	if len(bigBody) != 2100 {
+		t.Fatalf("fixture setup: expected 2100 bytes, got %d", len(bigBody))
+	}
+
+	fixture := fmt.Sprintf(`{
+		"id":"30000","key":"ITSM-UTF8-1",
+		"fields":{
+			"summary":"utf8 truncation","description":null,
+			"status":{"name":"Open","id":"1","statusCategory":{"key":"new"}},
+			"issuetype":{"name":"Task","id":"3","subtask":false},
+			"priority":{"name":"Medium","id":"3"},
+			"project":{"key":"ITSM","name":"IT Service Management","id":"100"},
+			"created":"2026-03-01T00:00:00.000+0000",
+			"updated":"2026-04-15T00:00:00.000+0000",
+			"attachment":[],
+			"comment":{"total":1,"maxResults":1,"startAt":0,"comments":[
+				{"id":"cutf8","author":{"accountId":"acc-u1","displayName":"User 1"},
+				 "body":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[
+					{"type":"text","text":%q}
+				 ]}]},
+				 "created":"2026-03-01T00:00:00.000+0000",
+				 "updated":"2026-03-01T00:00:00.000+0000"}
+			]}
+		}
+	}`, bigBody)
+
+	srv := newRefreshTestServer(t,
+		[]string{"ITSM-UTF8-1"},
+		map[string]string{"ITSM-UTF8-1": fixture},
+	)
+	defer srv.Close()
+
+	report, err := Refresh(context.Background(), RefreshOpts{
+		Config:     baseConfig(srv),
+		HTTPClient: srv.Client(),
+	})
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	data, err := os.ReadFile(report.CachePath)
+	if err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+	var out JiraCache
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(out.Issues) != 1 || len(out.Issues[0].Comments) != 1 {
+		t.Fatalf("expected 1 issue with 1 comment, got %d issues", len(out.Issues))
+	}
+	got := out.Issues[0].Comments[0].Body
+	if !out.Issues[0].Comments[0].Truncated {
+		t.Errorf("Truncated: got false, want true")
+	}
+	// Must be valid UTF-8 after truncation (core WR-01 invariant).
+	if !utf8.ValidString(got) {
+		t.Errorf("truncated body is not valid UTF-8: %q", got)
+	}
+	// Cut should be at byte 1998 (666 runes × 3 bytes), NOT 2000.
+	// - 1998 % 3 == 0  → rune-aligned
+	// - len(got) must be <= 2000 (the cap) but > 1997 (we didn't over-walk).
+	if len(got) != 1998 {
+		t.Errorf("truncated body length: got %d bytes, want 1998 (666 × 3-byte runes)", len(got))
+	}
+	// Every rune in the output must be "한" — nothing corrupted.
+	if runeCount := utf8.RuneCountInString(got); runeCount != 666 {
+		t.Errorf("rune count: got %d, want 666", runeCount)
+	}
+	// The raw cache JSON must also be valid UTF-8 (json.Marshal would otherwise
+	// escape invalid bytes, but we want to see no escapes for valid Korean text).
+	if !utf8.Valid(data) {
+		t.Errorf("cache file bytes are not valid UTF-8")
+	}
+	// Confirm the JSON does not contain the Unicode replacement character U+FFFD.
+	if bytes.Contains(data, []byte("\ufffd")) {
+		t.Errorf("cache contains U+FFFD replacement character — truncation split a rune")
 	}
 }

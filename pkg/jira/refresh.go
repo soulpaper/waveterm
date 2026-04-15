@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
 )
@@ -237,7 +238,16 @@ func buildCacheIssue(issue *Issue, baseUrl string, localPaths map[string]string)
 		}
 		truncated := false
 		if len(body) > 2000 {
-			body = body[:2000]
+			// Truncate on a valid UTF-8 rune boundary, not a byte boundary.
+			// Byte-slicing at 2000 could split a multi-byte rune (Korean/CJK/
+			// emoji), producing invalid UTF-8 that json.Marshal would escape
+			// or the widget would render as U+FFFD. Walk back to the start
+			// of the rune that overruns the cap. (WR-01)
+			cut := 2000
+			for cut > 0 && !utf8.RuneStart(body[cut]) {
+				cut--
+			}
+			body = body[:cut]
 			truncated = true
 		}
 		// Author flatten (Pitfall 1). DisplayName preferred; accountId fallback.
