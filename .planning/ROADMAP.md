@@ -77,6 +77,13 @@ Plans:
 
 **Requirements:** JIRA-03, JIRA-08
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 03-01-rpc-method-and-handler-PLAN.md — Add JiraRefreshCommand to WshRpcInterface + WshServer handler with Korean error-class mapping (D-ERR-01) + Nyquist RED→GREEN test + `task generate` TS regen (Wave 1)
+- [ ] 03-02-wsh-jira-cli-PLAN.md — cmd/wsh/cmd/wshcmd-jira.go: `wsh jira refresh` cobra subcommand with --json/--timeout flags + exit-code mapping per D-ERR-04 (Wave 2, parallel to 03-03)
+- [ ] 03-03-widget-wireup-PLAN.md — Rewrite requestJiraRefresh() to call RpcApi.JiraRefreshCommand directly, add refreshProgressAtom, update tooltip, manual UAT checkpoint for ROADMAP Success #2-4 (Wave 2, parallel to 03-02)
+
 **Deliverables:**
 - New RPC command in `pkg/wshrpc/wshrpctypes.go` + handler
 - `wsh jira refresh` CLI verb
