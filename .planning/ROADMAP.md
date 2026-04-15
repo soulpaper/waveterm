@@ -24,7 +24,7 @@ Plans:
 - [x] 01-01-scaffold-and-stubs-PLAN.md — Create pkg/jira/ directory + failing Nyquist stub tests for every D-22 coverage item
 - [x] 01-02-config-and-errors-PLAN.md — Implement Config struct + LoadConfig (D-07..D-12) and APIError + sentinel errors (D-18..D-20)
 - [x] 01-03-adf-converter-PLAN.md — Implement ADFToMarkdown for 10 block node types + 4 inline marks + hardBreak + mention (D-13..D-17)
-- [ ] 01-04-http-client-PLAN.md — Implement Client.SearchIssues (POST /rest/api/3/search/jql) + Client.GetIssue (D-01..D-06, D-19..D-20)
+- [x] 01-04-http-client-PLAN.md — Implement Client.SearchIssues (POST /rest/api/3/search/jql) + Client.GetIssue (D-01..D-06, D-19..D-20)
 
 **Deliverables:**
 - `pkg/jira/config.go` — struct + loader with defaults
