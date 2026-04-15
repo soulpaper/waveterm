@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "workflow": {
+    "research": false,
+    "commit_docs": true
+  },
+  "models": {
+    "researcher": "inherit",
+    "synthesizer": "inherit",
+    "roadmapper": "inherit",
+    "planner": "inherit",
+    "executor": "inherit"
+  }
+}
