@@ -11,10 +11,10 @@ bindings/
 bin/
 *.dmg
 *.exe
+make/
 .DS_Store
 *~
 out/
-make/
 artifacts/
 mikework/
 aiplans/
