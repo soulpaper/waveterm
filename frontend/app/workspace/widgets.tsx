@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Tooltip } from "@/app/element/tooltip";
+import { getApi } from "@/app/store/global";
+import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useWaveEnv, WaveEnv, WaveEnvSubset } from "@/app/waveenv/waveenv";
 import { shouldIncludeWidgetForWorkspace } from "@/app/workspace/widgetfilter";
 import { modalsModel } from "@/store/modalmodel";
-import { fireAndForget, isBlank, makeIconClass } from "@/util/util";
+import { base64ToString, fireAndForget, isBlank, makeIconClass, stringToBase64 } from "@/util/util";
 import {
     autoUpdate,
     FloatingPortal,
@@ -38,21 +40,90 @@ export type WidgetsEnv = WaveEnvSubset<{
     showContextMenu: WaveEnv["showContextMenu"];
 }>;
 
-function sortByDisplayOrder(wmap: { [key: string]: WidgetConfigType }): WidgetConfigType[] {
+type WidgetEntry = { key: string; widget: WidgetConfigType };
+
+function sortByDisplayOrder(wmap: { [key: string]: WidgetConfigType }): WidgetEntry[] {
     if (wmap == null) {
         return [];
     }
-    const wlist = Object.values(wmap);
-    wlist.sort((a, b) => {
-        return (a["display:order"] ?? 0) - (b["display:order"] ?? 0);
+    const entries: WidgetEntry[] = Object.entries(wmap).map(([key, widget]) => ({ key, widget }));
+    entries.sort((a, b) => {
+        return (a.widget["display:order"] ?? 0) - (b.widget["display:order"] ?? 0);
     });
-    return wlist;
+    return entries;
+}
+
+function isRemovableWidgetKey(key: string): boolean {
+    return key.startsWith("custom@");
+}
+
+async function readUserWidgetsJson(): Promise<Record<string, any>> {
+    const fullPath = `${getApi().getConfigDir()}/widgets.json`;
+    try {
+        const fileData = await RpcApi.FileReadCommand(TabRpcClient, { info: { path: fullPath } }, null);
+        const content = fileData?.data64 ? base64ToString(fileData.data64) : "";
+        if (!content.trim()) return {};
+        return JSON.parse(content);
+    } catch {
+        return {};
+    }
+}
+
+async function writeUserWidgetsJson(cfg: Record<string, any>): Promise<void> {
+    const fullPath = `${getApi().getConfigDir()}/widgets.json`;
+    const formatted = JSON.stringify(cfg, null, 4);
+    await RpcApi.FileWriteCommand(
+        TabRpcClient,
+        { info: { path: fullPath }, data64: stringToBase64(formatted) },
+        null
+    );
+}
+
+async function persistReorder(orderedEntries: WidgetEntry[]): Promise<void> {
+    const userCfg = await readUserWidgetsJson();
+    orderedEntries.forEach((entry, idx) => {
+        const newOrder = (idx + 1) * 10;
+        // full override so top-level key replace (simpleMerge) keeps icon/label/blockdef
+        userCfg[entry.key] = { ...entry.widget, "display:order": newOrder };
+    });
+    await writeUserWidgetsJson(userCfg);
+}
+
+async function persistRemove(key: string): Promise<void> {
+    const userCfg = await readUserWidgetsJson();
+    delete userCfg[key];
+    await writeUserWidgetsJson(userCfg);
+}
+
+async function persistHide(entry: WidgetEntry): Promise<void> {
+    const userCfg = await readUserWidgetsJson();
+    userCfg[entry.key] = { ...entry.widget, "display:hidden": true };
+    await writeUserWidgetsJson(userCfg);
+}
+
+async function persistUnhideAll(hiddenEntries: WidgetEntry[]): Promise<void> {
+    if (hiddenEntries.length === 0) return;
+    const userCfg = await readUserWidgetsJson();
+    hiddenEntries.forEach((entry) => {
+        userCfg[entry.key] = { ...entry.widget, "display:hidden": false };
+    });
+    await writeUserWidgetsJson(userCfg);
 }
 
 type WidgetPropsType = {
     widget: WidgetConfigType;
+    widgetKey: string;
     mode: "normal" | "compact" | "supercompact";
     env: WidgetsEnv;
+    dragIndex: number;
+    draggingIndex: number | null;
+    dropTargetIndex: number | null;
+    onDragStart: (index: number) => void;
+    onDragOver: (index: number, e: React.DragEvent) => void;
+    onDrop: (index: number) => void;
+    onDragEnd: () => void;
+    onRequestRemove: (key: string) => void;
+    onRequestHide: (entry: WidgetEntry) => void;
 };
 
 async function handleWidgetSelect(widget: WidgetConfigType, env: WidgetsEnv) {
@@ -60,45 +131,106 @@ async function handleWidgetSelect(widget: WidgetConfigType, env: WidgetsEnv) {
     env.createBlock(blockDef, widget.magnified);
 }
 
-const Widget = memo(({ widget, mode, env }: WidgetPropsType) => {
-    const [isTruncated, setIsTruncated] = useState(false);
-    const labelRef = useRef<HTMLDivElement>(null);
+const Widget = memo(
+    ({
+        widget,
+        widgetKey,
+        mode,
+        env,
+        dragIndex,
+        draggingIndex,
+        dropTargetIndex,
+        onDragStart,
+        onDragOver,
+        onDrop,
+        onDragEnd,
+        onRequestRemove,
+        onRequestHide,
+    }: WidgetPropsType) => {
+        const [isTruncated, setIsTruncated] = useState(false);
+        const labelRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        if (mode === "normal" && labelRef.current) {
-            const element = labelRef.current;
-            setIsTruncated(element.scrollWidth > element.clientWidth);
-        }
-    }, [mode, widget.label]);
+        useEffect(() => {
+            if (mode === "normal" && labelRef.current) {
+                const element = labelRef.current;
+                setIsTruncated(element.scrollWidth > element.clientWidth);
+            }
+        }, [mode, widget.label]);
 
-    const shouldDisableTooltip = mode !== "normal" ? false : !isTruncated;
+        const shouldDisableTooltip = mode !== "normal" ? false : !isTruncated;
+        const isDragging = draggingIndex === dragIndex;
+        const isDropTarget = dropTargetIndex === dragIndex && draggingIndex !== null && draggingIndex !== dragIndex;
 
-    return (
-        <Tooltip
-            content={widget.description || widget.label}
-            placement="left"
-            disable={shouldDisableTooltip}
-            divClassName={clsx(
-                "flex flex-col justify-center items-center w-full py-1.5 pr-0.5 text-secondary overflow-hidden rounded-sm hover:bg-hoverbg hover:text-white cursor-pointer",
-                mode === "supercompact" ? "text-sm" : "text-lg",
-                widget["display:hidden"] && "hidden"
-            )}
-            divOnClick={() => handleWidgetSelect(widget, env)}
-        >
-            <div style={{ color: widget.color }}>
-                <i className={makeIconClass(widget.icon, true, { defaultIcon: "browser" })}></i>
-            </div>
-            {mode === "normal" && !isBlank(widget.label) ? (
-                <div
-                    ref={labelRef}
-                    className="text-xxs mt-0.5 w-full px-0.5 text-center whitespace-nowrap overflow-hidden text-ellipsis"
-                >
-                    {widget.label}
+        const handleContextMenu = (e: React.MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const removable = isRemovableWidgetKey(widgetKey);
+            const menu: ContextMenuItem[] = removable
+                ? [
+                      {
+                          label: "Remove Widget",
+                          click: () => onRequestRemove(widgetKey),
+                      },
+                  ]
+                : [
+                      {
+                          label: "Hide Widget",
+                          click: () => onRequestHide({ key: widgetKey, widget }),
+                      },
+                  ];
+            env.showContextMenu(menu, e);
+        };
+
+        return (
+            <Tooltip
+                content={widget.description || widget.label}
+                placement="left"
+                disable={shouldDisableTooltip}
+                divClassName={clsx(
+                    "flex flex-col justify-center items-center w-full py-1.5 pr-0.5 text-secondary overflow-hidden rounded-sm hover:bg-hoverbg hover:text-white cursor-pointer",
+                    mode === "supercompact" ? "text-sm" : "text-lg",
+                    widget["display:hidden"] && "hidden",
+                    isDragging && "opacity-40",
+                    isDropTarget && "outline outline-1 outline-accent"
+                )}
+                divOnClick={() => handleWidgetSelect(widget, env)}
+                divOnContextMenu={handleContextMenu}
+                divDraggable={true}
+                divOnDragStart={(e: React.DragEvent<HTMLDivElement>) => {
+                    e.dataTransfer.effectAllowed = "move";
+                    // text/plain is required — Electron treats custom MIME types as external OS drag
+                    e.dataTransfer.setData("text/plain", widgetKey);
+                    onDragStart(dragIndex);
+                }}
+                divOnDragEnter={(e: React.DragEvent<HTMLDivElement>) => {
+                    e.preventDefault();
+                }}
+                divOnDragOver={(e: React.DragEvent<HTMLDivElement>) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    onDragOver(dragIndex, e);
+                }}
+                divOnDrop={(e: React.DragEvent<HTMLDivElement>) => {
+                    e.preventDefault();
+                    onDrop(dragIndex);
+                }}
+                divOnDragEnd={onDragEnd}
+            >
+                <div style={{ color: widget.color }}>
+                    <i className={makeIconClass(widget.icon, true, { defaultIcon: "browser" })}></i>
                 </div>
-            ) : null}
-        </Tooltip>
-    );
-});
+                {mode === "normal" && !isBlank(widget.label) ? (
+                    <div
+                        ref={labelRef}
+                        className="text-xxs mt-0.5 w-full px-0.5 text-center whitespace-nowrap overflow-hidden text-ellipsis"
+                    >
+                        {widget.label}
+                    </div>
+                ) : null}
+            </Tooltip>
+        );
+    }
+);
 
 function calculateGridSize(appCount: number): number {
     if (appCount <= 4) return 2;
@@ -384,6 +516,51 @@ const Widgets = memo(() => {
     );
     const widgets = sortByDisplayOrder(filteredWidgets);
 
+    const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+    const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+
+    const handleDragStart = useCallback((index: number) => {
+        setDraggingIndex(index);
+        setDropTargetIndex(null);
+    }, []);
+
+    const handleDragOver = useCallback((index: number, _e: React.DragEvent) => {
+        setDropTargetIndex(index);
+    }, []);
+
+    const handleDragEnd = useCallback(() => {
+        setDraggingIndex(null);
+        setDropTargetIndex(null);
+    }, []);
+
+    const handleDrop = useCallback(
+        (targetIndex: number) => {
+            const from = draggingIndex;
+            setDraggingIndex(null);
+            setDropTargetIndex(null);
+            if (from === null || from === targetIndex) return;
+            const reordered = [...widgets];
+            const [moved] = reordered.splice(from, 1);
+            reordered.splice(targetIndex, 0, moved);
+            fireAndForget(() => persistReorder(reordered));
+        },
+        [draggingIndex, widgets]
+    );
+
+    const handleRequestRemove = useCallback((key: string) => {
+        if (!isRemovableWidgetKey(key)) return;
+        fireAndForget(() => persistRemove(key));
+    }, []);
+
+    const handleRequestHide = useCallback((entry: WidgetEntry) => {
+        fireAndForget(() => persistHide(entry));
+    }, []);
+
+    const hiddenEntries = widgets.filter((e) => e.widget["display:hidden"]);
+    const handleShowHidden = useCallback(() => {
+        fireAndForget(() => persistUnhideAll(hiddenEntries));
+    }, [hiddenEntries]);
+
     const [isAppsOpen, setIsAppsOpen] = useState(false);
     const appsButtonRef = useRef<HTMLDivElement>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -443,9 +620,15 @@ const Widgets = memo(() => {
                     modalsModel.pushModal("AddWebWidgetModal");
                 },
             },
-            {
-                type: "separator",
-            },
+        ];
+        if (hiddenEntries.length > 0) {
+            menu.push({
+                label: `Show Hidden Widgets (${hiddenEntries.length})`,
+                click: handleShowHidden,
+            });
+        }
+        menu.push(
+            { type: "separator" },
             {
                 label: "Edit widgets.json",
                 click: () => {
@@ -459,8 +642,8 @@ const Widgets = memo(() => {
                         await env.createBlock(blockDef, false, true);
                     });
                 },
-            },
-        ];
+            }
+        );
         env.showContextMenu(menu, e);
     };
 
@@ -474,8 +657,23 @@ const Widgets = memo(() => {
                 {mode === "supercompact" ? (
                     <>
                         <div className="grid grid-cols-2 gap-0 w-full">
-                            {widgets?.map((data, idx) => (
-                                <Widget key={`widget-${idx}`} widget={data} mode={mode} env={env} />
+                            {widgets?.map((entry, idx) => (
+                                <Widget
+                                    key={entry.key}
+                                    widgetKey={entry.key}
+                                    widget={entry.widget}
+                                    mode={mode}
+                                    env={env}
+                                    dragIndex={idx}
+                                    draggingIndex={draggingIndex}
+                                    dropTargetIndex={dropTargetIndex}
+                                    onDragStart={handleDragStart}
+                                    onDragOver={handleDragOver}
+                                    onDrop={handleDrop}
+                                    onDragEnd={handleDragEnd}
+                                    onRequestRemove={handleRequestRemove}
+                                    onRequestHide={handleRequestHide}
+                                />
                             ))}
                         </div>
                         <div className="flex-grow" />
@@ -515,8 +713,23 @@ const Widgets = memo(() => {
                     </>
                 ) : (
                     <>
-                        {widgets?.map((data, idx) => (
-                            <Widget key={`widget-${idx}`} widget={data} mode={mode} env={env} />
+                        {widgets?.map((entry, idx) => (
+                            <Widget
+                                key={entry.key}
+                                widgetKey={entry.key}
+                                widget={entry.widget}
+                                mode={mode}
+                                env={env}
+                                dragIndex={idx}
+                                draggingIndex={draggingIndex}
+                                dropTargetIndex={dropTargetIndex}
+                                onDragStart={handleDragStart}
+                                onDragOver={handleDragOver}
+                                onDrop={handleDrop}
+                                onDragEnd={handleDragEnd}
+                                onRequestRemove={handleRequestRemove}
+                                onRequestHide={handleRequestHide}
+                            />
                         ))}
                         <div className="flex-grow" />
                         {env.isDev() || featureWaveAppBuilder ? (
@@ -597,8 +810,23 @@ const Widgets = memo(() => {
                 ref={measurementRef}
                 className="flex flex-col w-12 py-1 -ml-1 select-none absolute -z-10 opacity-0 pointer-events-none"
             >
-                {widgets?.map((data, idx) => (
-                    <Widget key={`measurement-widget-${idx}`} widget={data} mode="normal" env={env} />
+                {widgets?.map((entry, idx) => (
+                    <Widget
+                        key={`measurement-${entry.key}`}
+                        widgetKey={entry.key}
+                        widget={entry.widget}
+                        mode="normal"
+                        env={env}
+                        dragIndex={idx}
+                        draggingIndex={null}
+                        dropTargetIndex={null}
+                        onDragStart={() => {}}
+                        onDragOver={() => {}}
+                        onDrop={() => {}}
+                        onDragEnd={() => {}}
+                        onRequestRemove={() => {}}
+                        onRequestHide={() => {}}
+                    />
                 ))}
                 <div className="flex-grow" />
                 <div className="flex flex-col justify-center items-center w-full py-1.5 pr-0.5 text-lg">

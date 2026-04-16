@@ -24,6 +24,13 @@ interface TooltipProps {
     divClassName?: string;
     divStyle?: React.CSSProperties;
     divOnClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
+    divOnContextMenu?: (e: React.MouseEvent<HTMLDivElement>) => void;
+    divDraggable?: boolean;
+    divOnDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
+    divOnDragOver?: (e: React.DragEvent<HTMLDivElement>) => void;
+    divOnDragEnter?: (e: React.DragEvent<HTMLDivElement>) => void;
+    divOnDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void;
+    divOnDrop?: (e: React.DragEvent<HTMLDivElement>) => void;
     divRef?: React.RefObject<HTMLDivElement>;
     hideOnClick?: boolean;
 }
@@ -37,6 +44,13 @@ function TooltipInner({
     divClassName,
     divStyle,
     divOnClick,
+    divOnContextMenu,
+    divDraggable,
+    divOnDragStart,
+    divOnDragOver,
+    divOnDragEnter,
+    divOnDragEnd,
+    divOnDrop,
     divRef,
     hideOnClick = false,
 }: Omit<TooltipProps, "disable">) {
@@ -147,6 +161,13 @@ function TooltipInner({
                 {...getReferenceProps({ onClick: handleClick, onPointerEnter: handlePointerEnter })}
                 className={divClassName}
                 style={divStyle}
+                onContextMenu={divOnContextMenu}
+                draggable={divDraggable}
+                onDragStart={divOnDragStart}
+                onDragOver={divOnDragOver}
+                onDragEnter={divOnDragEnter}
+                onDragEnd={divOnDragEnd}
+                onDrop={divOnDrop}
             >
                 {children}
             </div>
@@ -182,12 +203,31 @@ export function Tooltip({
     divClassName,
     divStyle,
     divOnClick,
+    divOnContextMenu,
+    divDraggable,
+    divOnDragStart,
+    divOnDragOver,
+    divOnDragEnter,
+    divOnDragEnd,
+    divOnDrop,
     divRef,
     hideOnClick = false,
 }: TooltipProps) {
     if (disable) {
         return (
-            <div ref={divRef} className={divClassName} style={divStyle} onClick={divOnClick}>
+            <div
+                ref={divRef}
+                className={divClassName}
+                style={divStyle}
+                onClick={divOnClick}
+                onContextMenu={divOnContextMenu}
+                draggable={divDraggable}
+                onDragStart={divOnDragStart}
+                onDragOver={divOnDragOver}
+                onDragEnter={divOnDragEnter}
+                onDragEnd={divOnDragEnd}
+                onDrop={divOnDrop}
+            >
                 {children}
             </div>
         );
@@ -203,6 +243,13 @@ export function Tooltip({
             divClassName={divClassName}
             divStyle={divStyle}
             divOnClick={divOnClick}
+            divOnContextMenu={divOnContextMenu}
+            divDraggable={divDraggable}
+            divOnDragStart={divOnDragStart}
+            divOnDragOver={divOnDragOver}
+            divOnDragEnter={divOnDragEnter}
+            divOnDragEnd={divOnDragEnd}
+            divOnDrop={divOnDrop}
             divRef={divRef}
             hideOnClick={hideOnClick}
         />
