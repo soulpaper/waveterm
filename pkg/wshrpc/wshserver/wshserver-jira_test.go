@@ -211,3 +211,93 @@ func TestJiraRefreshCommand(t *testing.T) {
 		}
 	})
 }
+
+// TestJiraDownloadCommand verifies the JiraDownloadCommand handler: success path,
+// config error mapping, and download error mapping.
+func TestJiraDownloadCommand(t *testing.T) {
+	ws := &WshServer{}
+
+	restoreSeams := func(t *testing.T) {
+		t.Helper()
+		origLoad := jiraLoadConfig
+		origDownload := jiraDownload
+		t.Cleanup(func() {
+			jiraLoadConfig = origLoad
+			jiraDownload = origDownload
+		})
+	}
+
+	t.Run("success", func(t *testing.T) {
+		restoreSeams(t)
+		cfg := jira.Config{BaseUrl: "https://example.atlassian.net", Email: "u@x.com", ApiToken: "tok"}
+		jiraLoadConfig = func() (jira.Config, error) { return cfg, nil }
+		jiraDownload = func(ctx context.Context, opts jira.DownloadOpts) (*jira.DownloadReport, error) {
+			if opts.IssueKey != "TEST-1" {
+				t.Errorf("IssueKey = %q, want TEST-1", opts.IssueKey)
+			}
+			if opts.Filename != "report.pdf" {
+				t.Errorf("Filename = %q, want report.pdf", opts.Filename)
+			}
+			return &jira.DownloadReport{
+				IssueKey: "TEST-1",
+				Downloaded: []jira.DownloadResult{
+					{Filename: "report.pdf", Size: 1024, LocalPath: "/tmp/att/report.pdf"},
+				},
+				TotalBytes: 1024,
+			}, nil
+		}
+
+		got, err := ws.JiraDownloadCommand(context.Background(), wshrpc.CommandJiraDownloadData{
+			IssueKey: "TEST-1",
+			Filename: "report.pdf",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.IssueKey != "TEST-1" {
+			t.Errorf("IssueKey = %q, want TEST-1", got.IssueKey)
+		}
+		if len(got.Files) != 1 {
+			t.Fatalf("expected 1 file, got %d", len(got.Files))
+		}
+		if got.Files[0].Filename != "report.pdf" || got.Files[0].Size != 1024 {
+			t.Errorf("file mismatch: %+v", got.Files[0])
+		}
+		if got.TotalBytes != 1024 {
+			t.Errorf("TotalBytes = %d, want 1024", got.TotalBytes)
+		}
+	})
+
+	t.Run("config_error", func(t *testing.T) {
+		restoreSeams(t)
+		jiraLoadConfig = func() (jira.Config, error) { return jira.Config{}, jira.ErrConfigNotFound }
+		jiraDownload = func(ctx context.Context, opts jira.DownloadOpts) (*jira.DownloadReport, error) {
+			t.Fatal("download should not be called when LoadConfig fails")
+			return nil, nil
+		}
+		_, err := ws.JiraDownloadCommand(context.Background(), wshrpc.CommandJiraDownloadData{IssueKey: "X-1"})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.HasPrefix(err.Error(), "설정 파일이 없습니다") {
+			t.Errorf("error = %q, want config missing prefix", err.Error())
+		}
+	})
+
+	t.Run("not_in_cache", func(t *testing.T) {
+		restoreSeams(t)
+		jiraLoadConfig = func() (jira.Config, error) {
+			return jira.Config{BaseUrl: "x", Email: "u", ApiToken: "t"}, nil
+		}
+		jiraDownload = func(ctx context.Context, opts jira.DownloadOpts) (*jira.DownloadReport, error) {
+			return nil, fmt.Errorf("jira download: issue MISS-1 not found in cache (run `wsh jira refresh` first)")
+		}
+		_, err := ws.JiraDownloadCommand(context.Background(), wshrpc.CommandJiraDownloadData{IssueKey: "MISS-1"})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.HasPrefix(err.Error(), "download failed:") {
+			t.Errorf("error = %q, want 'download failed:' prefix", err.Error())
+		}
+	})
+}
