@@ -24,6 +24,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -49,14 +51,31 @@ type RefreshOpts struct {
 	//   "search" — paginating search. current = issues discovered so far;
 	//              total = 0 (enhanced search has no total per RESEARCH
 	//              Pitfall 6). First call is ("search", 0, 0).
-	//   "fetch"  — per-issue GetIssue. current = 1-based index of the issue
-	//              whose fetch just completed (success or skip);
-	//              total = len(allKeys).
+	//   "build"  — building cache entries from received issues. current =
+	//              1-based index of the issue just processed; total = total
+	//              received (no HTTP, just local ADF conversion).
 	//   "write"  — cache write. First call ("write", 0, 1) before marshal;
 	//              final call ("write", 1, 1) after successful rename.
 	//
 	// The callback runs on Refresh's goroutine; it must not block.
 	OnProgress func(stage string, current, total int)
+
+	// ForceFull, when true, bypasses the incremental refresh path and re-fetches
+	// every issue the JQL returns. Default false = auto-incremental when a valid
+	// prior cache is present and recent enough.
+	ForceFull bool
+
+	// StaleAfter defines how old the existing cache can be before we auto-upgrade
+	// a delta refresh to a full one. Zero = 24h default. Issues deleted upstream
+	// between full refreshes remain in the cache until the next full (delta
+	// can't detect deletions).
+	StaleAfter time.Duration
+
+	// StatusCategories, if non-empty, restricts the fetch to issues whose Jira
+	// statusCategory is in this list. Valid values: "new", "indeterminate",
+	// "done". Used by the widget to skip "done" issues server-side when the
+	// user has that filter toggled off.
+	StatusCategories []string
 }
 
 // RefreshReport summarizes a successful Refresh. Nil when Refresh returns a
@@ -102,33 +121,97 @@ func Refresh(ctx context.Context, opts RefreshOpts) (*RefreshReport, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jira refresh: %v", err)
 	}
-	localPaths := loadExistingLocalPaths(cachePath) // best-effort, never errors (D-FLOW-04)
 
-	// Step 1 — paginate search until isLast or empty nextPageToken (D-FLOW-01).
+	// Load existing cache for delta + localPath preservation (D-FLOW-04).
+	existing := loadExistingCache(cachePath) // best-effort, never errors
+	localPaths := localPathsFromCache(existing)
+
+	// Determine whether this is a delta or full refresh.
+	staleAfter := opts.StaleAfter
+	if staleAfter == 0 {
+		staleAfter = 24 * time.Hour
+	}
+	isDelta := false
+	var extraClauses []string
+	if !opts.ForceFull && existing != nil && existing.FetchedAt != "" && len(existing.Issues) > 0 {
+		if prev, perr := time.Parse(time.RFC3339, existing.FetchedAt); perr == nil {
+			age := time.Since(prev)
+			if age < staleAfter {
+				isDelta = true
+				// 60s clock-skew buffer; JQL date format = "YYYY-MM-DD HH:mm".
+				// Jira treats bare quoted dates as local time; we shift to
+				// UTC and shave 60s to be inclusive of boundary edits.
+				cutoff := prev.UTC().Add(-60 * time.Second)
+				extraClauses = append(extraClauses,
+					fmt.Sprintf(`updated >= "%s"`, cutoff.Format("2006-01-02 15:04")))
+			}
+		}
+	}
+	// Status category restriction (widget filter propagation).
+	// Jira's JQL does NOT accept the lowercase key strings ("new", "indeterminate",
+	// "done") directly — those are API keys, not JQL tokens. Use the numeric
+	// statusCategory IDs instead (locale-independent, documented in Jira REST):
+	//   2 = "To Do"        (key "new")
+	//   4 = "In Progress"  (key "indeterminate")
+	//   3 = "Done"         (key "done")
+	if len(opts.StatusCategories) > 0 {
+		categoryIds := make([]string, 0, len(opts.StatusCategories))
+		for _, s := range opts.StatusCategories {
+			// Allow-list prevents JQL injection via unknown values.
+			switch s {
+			case "new":
+				categoryIds = append(categoryIds, "2")
+			case "indeterminate":
+				categoryIds = append(categoryIds, "4")
+			case "done":
+				categoryIds = append(categoryIds, "3")
+			}
+		}
+		if len(categoryIds) > 0 {
+			extraClauses = append(extraClauses,
+				fmt.Sprintf("statusCategory in (%s)", strings.Join(categoryIds, ", ")))
+		}
+	}
+	extraJQL := strings.Join(extraClauses, " AND ")
+
+	// Step 1 — paginate search WITH FULL FIELDS (collapses prior /search + N × /issue calls).
 	progress(opts.OnProgress, "search", 0, 0)
-	allKeys, err := paginateSearch(ctx, client, opts.Config)
+	issueRefs, err := paginateSearchFull(ctx, client, opts.Config, extraJQL)
 	if err != nil {
 		return nil, fmt.Errorf("jira refresh: search failed: %v", err)
 	}
-	progress(opts.OnProgress, "search", len(allKeys), 0)
+	progress(opts.OnProgress, "search", len(issueRefs), 0)
 
-	// Step 2 — fetch each issue sequentially (D-CONC-01), build cache entries.
-	issueFieldList := []string{
-		"summary", "description", "status", "issuetype", "priority",
-		"project", "created", "updated", "attachment", "comment",
+	// Step 2 — build cache entries from the search response directly.
+	fetchedSet := make(map[string]bool, len(issueRefs))
+	cacheIssues := make([]JiraCacheIssue, 0, len(issueRefs))
+	total := len(issueRefs)
+	for i, ref := range issueRefs {
+		issue := Issue{ID: ref.ID, Key: ref.Key, Self: ref.Self, Fields: ref.Fields}
+		cacheIssues = append(cacheIssues, buildCacheIssue(&issue, opts.Config.BaseUrl, localPaths))
+		fetchedSet[ref.Key] = true
+		progress(opts.OnProgress, "build", i+1, total)
 	}
 
-	cacheIssues := make([]JiraCacheIssue, 0, len(allKeys))
-	for i, key := range allKeys {
-		issue, gerr := client.GetIssue(ctx, key, GetIssueOpts{Fields: issueFieldList})
-		if gerr != nil {
-			// D-ERR-01: log (%v only, T-01-02) and skip.
-			log.Printf("jira refresh: GetIssue %s failed: %v (skipping)", key, gerr)
-			progress(opts.OnProgress, "fetch", i+1, len(allKeys))
-			continue
+	// In delta mode, append any existing issues NOT re-fetched (unchanged since last refresh).
+	// When a status filter is active, drop existing issues whose category no longer
+	// matches — this lets a widget-side "done" toggle take effect immediately on
+	// the next delta refresh without requiring a full reconcile.
+	if isDelta && existing != nil {
+		allowedCategories := map[string]bool{}
+		for _, s := range opts.StatusCategories {
+			allowedCategories[s] = true
 		}
-		cacheIssues = append(cacheIssues, buildCacheIssue(issue, opts.Config.BaseUrl, localPaths))
-		progress(opts.OnProgress, "fetch", i+1, len(allKeys))
+		filterOn := len(allowedCategories) > 0
+		for _, old := range existing.Issues {
+			if fetchedSet[old.Key] {
+				continue
+			}
+			if filterOn && !allowedCategories[old.StatusCategory] {
+				continue
+			}
+			cacheIssues = append(cacheIssues, old)
+		}
 	}
 
 	// Step 5 — marshal + atomic write (D-FLOW-05).
@@ -165,35 +248,38 @@ func Refresh(ctx context.Context, opts RefreshOpts) (*RefreshReport, error) {
 	}, nil
 }
 
-// paginateSearch calls SearchIssues repeatedly until IsLast is true or the
-// server returns an empty NextPageToken. Collects issue keys only —
-// per D-FLOW-02 full-field fetching happens in Step 2 via GetIssue.
-func paginateSearch(ctx context.Context, client *Client, cfg Config) ([]string, error) {
-	var keys []string
+// paginateSearchFull calls SearchIssues with all cache-relevant fields so the
+// response includes full issue data — no per-issue GetIssue call needed.
+// This collapses the previous ~1+N HTTP roundtrips (1 search per page + N full
+// fetches) down to just the search pagination pass. If `extraJQL` is non-empty,
+// it is AND'd into the base JQL (used for delta refresh).
+func paginateSearchFull(ctx context.Context, client *Client, cfg Config, extraJQL string) ([]IssueRef, error) {
+	jql := combineJQL(cfg.Jql, extraJQL)
+	fieldList := []string{
+		"summary", "description", "status", "issuetype", "priority",
+		"project", "created", "updated", "attachment", "comment",
+	}
+	var all []IssueRef
 	var nextToken string
-	// Defensive upper bound: 1000 pages × 50/page = 50_000 issues. More than
-	// a realistic personal JQL. Prevents an infinite loop if the server
-	// violates its own isLast contract (T-02-13).
+	// Defensive upper bound: 1000 pages × 50/page = 50_000 issues (T-02-13).
 	const maxPages = 1000
 	for page := 0; page < maxPages; page++ {
 		res, err := client.SearchIssues(ctx, SearchOpts{
-			JQL:           cfg.Jql,
+			JQL:           jql,
 			NextPageToken: nextToken,
 			MaxResults:    cfg.PageSize,
-			Fields:        []string{"summary"}, // minimal — full fetch in Step 2
+			Fields:        fieldList,
 		})
 		if err != nil {
 			return nil, err
 		}
-		for _, ref := range res.Issues {
-			keys = append(keys, ref.Key)
-		}
+		all = append(all, res.Issues...)
 		if res.IsLast || res.NextPageToken == "" {
-			return keys, nil
+			return all, nil
 		}
 		nextToken = res.NextPageToken
 	}
-	return keys, fmt.Errorf("jira refresh: search pagination exceeded %d pages", maxPages)
+	return all, fmt.Errorf("jira refresh: search pagination exceeded %d pages", maxPages)
 }
 
 // buildCacheIssue converts a wire-format *Issue into a cache-format
@@ -274,6 +360,10 @@ func buildCacheIssue(issue *Issue, baseUrl string, localPaths map[string]string)
 			lastAt = candidate
 		}
 	}
+	// Reverse so cache stores newest-first (user-facing order).
+	for i, j := 0, len(cmts)-1; i < j; i, j = i+1, j-1 {
+		cmts[i], cmts[j] = cmts[j], cmts[i]
+	}
 
 	return JiraCacheIssue{
 		Key:            issue.Key,
@@ -307,23 +397,51 @@ func statusCategoryFromKey(k string) string {
 	}
 }
 
-// loadExistingLocalPaths reads ~/.config/waveterm/jira-cache.json if it
-// exists and extracts a flat map of (issueKey + "::" + attachmentID) →
-// localPath for every attachment with a non-empty LocalPath. Any error —
-// file missing, permission denied, malformed JSON, schema drift — returns
-// an empty map with no error surfaced (D-FLOW-04). This is deliberate:
-// Refresh's job is to produce a fresh cache, not to validate the prior one.
-func loadExistingLocalPaths(cachePath string) map[string]string {
-	out := map[string]string{}
+// orderByRe splits a JQL string on the first " ORDER BY " (case-insensitive).
+// The base JQL typically ends in ` ORDER BY updated DESC`; when we AND extra
+// clauses (delta / statusCategory filter) we must insert them BEFORE the
+// ORDER BY, otherwise Jira returns 400.
+var orderByRe = regexp.MustCompile(`(?i)\s+ORDER\s+BY\s+`)
+
+// combineJQL merges base JQL with additional WHERE clauses. Handles the
+// ORDER BY split described above. Empty extra → returns base unchanged.
+func combineJQL(base, extra string) string {
+	if extra == "" {
+		return base
+	}
+	loc := orderByRe.FindStringIndex(base)
+	if loc == nil {
+		return "(" + base + ") AND " + extra
+	}
+	where := base[:loc[0]]
+	orderBy := base[loc[0]:] // includes leading whitespace + "ORDER BY ..."
+	return "(" + where + ") AND " + extra + orderBy
+}
+
+// loadExistingCache reads ~/.config/waveterm/jira-cache.json if present and
+// returns the decoded struct. Any error (file missing, permission denied,
+// malformed JSON) returns nil — refresh is free to proceed as a full fetch.
+func loadExistingCache(cachePath string) *JiraCache {
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
-		return out
+		return nil
 	}
 	var existing JiraCache
 	if err := json.Unmarshal(data, &existing); err != nil {
+		return nil
+	}
+	return &existing
+}
+
+// localPathsFromCache builds the (issueKey + "::" + attachmentID) → localPath
+// map used by buildCacheIssue to preserve previously-downloaded attachment
+// paths (D-FLOW-04). Nil cache = empty map.
+func localPathsFromCache(c *JiraCache) map[string]string {
+	out := map[string]string{}
+	if c == nil {
 		return out
 	}
-	for _, iss := range existing.Issues {
+	for _, iss := range c.Issues {
 		for _, a := range iss.Attachments {
 			if a.LocalPath != "" {
 				out[iss.Key+"::"+a.ID] = a.LocalPath
@@ -331,6 +449,13 @@ func loadExistingLocalPaths(cachePath string) map[string]string {
 		}
 	}
 	return out
+}
+
+// loadExistingLocalPaths is kept as a thin adapter for existing tests that
+// still reference it directly. Prefer loadExistingCache + localPathsFromCache
+// for new code paths.
+func loadExistingLocalPaths(cachePath string) map[string]string {
+	return localPathsFromCache(loadExistingCache(cachePath))
 }
 
 // cacheFilePath returns the literal ~/.config/waveterm/jira-cache.json path

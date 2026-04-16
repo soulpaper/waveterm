@@ -542,9 +542,19 @@ type BlocksListEntry struct {
 }
 
 // CommandJiraRefreshData is the request payload for JiraRefreshCommand.
-// Empty struct in v1 — refresh uses ~/.config/waveterm/jira.json directly.
-// Reserved for future Force / JqlOverride — see CONTEXT D-RPC-02.
+// All fields are optional — callers may pass an empty struct.
 type CommandJiraRefreshData struct {
+	// StatusCategories, if non-empty, restricts the refresh to issues whose
+	// Jira statusCategory is in this list. Valid values: "new",
+	// "indeterminate", "done". Empty = no restriction (fetch everything the
+	// base JQL returns). The widget passes the user's current filter here so
+	// the server never pulls "done" issues the user has toggled off.
+	StatusCategories []string `json:"statuscategories,omitempty"`
+
+	// ForceFull, if true, bypasses the incremental delta refresh and re-fetches
+	// every issue. The widget may set this when the user changes a filter in a
+	// way that would require previously-excluded issues to reappear.
+	ForceFull bool `json:"forcefull,omitempty"`
 }
 
 // CommandJiraRefreshRtnData is the response payload for JiraRefreshCommand.

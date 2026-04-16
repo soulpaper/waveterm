@@ -5,6 +5,7 @@ import type { BlockNodeModel } from "@/app/block/blocktypes";
 import { createBlock, getBlockMetaKeyAtom, globalStore } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { waveEventSubscribeSingle } from "@/app/store/wps";
 import type { TabModel } from "@/app/store/tab-model";
 import { getLayoutModelForStaticTab } from "@/layout/index";
 import { base64ToString, stringToBase64, fireAndForget } from "@/util/util";
@@ -235,6 +236,9 @@ export class JiraTasksViewModel implements ViewModel {
     errorAtom: PrimitiveAtom<string | null> = atom<string | null>(null) as PrimitiveAtom<string | null>;
     // D-UI-02: post-hoc refresh summary, auto-clears after 5s.
     refreshProgressAtom: PrimitiveAtom<string | null> = atom<string | null>(null) as PrimitiveAtom<string | null>;
+    // Live progress during refresh (updated by Event_JiraRefreshProgress subscription).
+    // Null when no refresh is running; otherwise a short status string like "이슈 12/47 가져오는 중...".
+    refreshLiveAtom: PrimitiveAtom<string | null> = atom<string | null>(null) as PrimitiveAtom<string | null>;
     launchModeAtom: PrimitiveAtom<LaunchMode> = atom<LaunchMode>("current");
     fetchedAtAtom: PrimitiveAtom<string> = atom("");
     expandedKeyAtom: PrimitiveAtom<string | null> = atom<string | null>(null) as PrimitiveAtom<string | null>;
@@ -286,10 +290,30 @@ export class JiraTasksViewModel implements ViewModel {
 
     endIconButtons: Atom<IconButtonDecl[]>;
 
+    unsubscribeProgress?: () => void;
+
     constructor({ blockId, nodeModel, tabModel }: ViewModelInitType) {
         this.blockId = blockId;
         this.nodeModel = nodeModel;
         this.tabModel = tabModel;
+
+        // Subscribe to mid-refresh progress events so the widget can show a live "N/M" status.
+        this.unsubscribeProgress = waveEventSubscribeSingle({
+            eventType: "jira:refreshprogress",
+            handler: (ev: any) => {
+                const data = ev?.data as JiraRefreshProgressData | undefined;
+                if (!data) return;
+                let label: string | null = null;
+                if (data.stage === "search") {
+                    label = data.current > 0 ? `이슈 목록 조회 중... (${data.current})` : "이슈 목록 조회 중...";
+                } else if (data.stage === "build") {
+                    label = data.total > 0 ? `이슈 ${data.current}/${data.total} 처리 중...` : `이슈 ${data.current} 처리 중...`;
+                } else if (data.stage === "write") {
+                    label = "캐시 저장 중...";
+                }
+                globalStore.set(this.refreshLiveAtom, label);
+            },
+        });
 
         const prefs = loadPrefs(blockId);
         globalStore.set(this.projectFilterAtom, prefs.projectFilter);
@@ -371,13 +395,13 @@ export class JiraTasksViewModel implements ViewModel {
             });
             buttons.push({
                 elemtype: "iconbutton",
-                icon: "cloud-arrow-down",
+                icon: "rotate-right",
                 title: "Jira에서 새로고침",
                 click: () => fireAndForget(() => this.requestJiraRefresh()),
             });
             buttons.push({
                 elemtype: "iconbutton",
-                icon: "rotate-right",
+                icon: "cloud-arrow-down",
                 title: "캐시 다시 읽기",
                 click: () => fireAndForget(() => this.loadFromCache()),
             });
@@ -385,7 +409,7 @@ export class JiraTasksViewModel implements ViewModel {
         });
     }
 
-    async requestJiraRefresh(): Promise<void> {
+    async requestJiraRefresh(forceFull: boolean = false): Promise<void> {
         // WR-01: guard against concurrent refresh calls (e.g., double-click on ☁️ button).
         // Two in-flight JiraRefreshCommand RPCs would race on ~/.config/waveterm/jira-cache.json.
         if (globalStore.get(this.loadingAtom)) {
@@ -394,7 +418,12 @@ export class JiraTasksViewModel implements ViewModel {
         globalStore.set(this.loadingAtom, true);
         globalStore.set(this.errorAtom, null);
         try {
-            const rtn = await RpcApi.JiraRefreshCommand(TabRpcClient, {});
+            const statuses = globalStore.get(this.statusFilterAtom);
+            const rtn = await RpcApi.JiraRefreshCommand(
+                TabRpcClient,
+                { statuscategories: statuses as string[], forcefull: forceFull || undefined },
+                { route: "wavesrv", timeout: 300000 }
+            );
             // Success: reload cache so issuesAtom reflects new data, then surface a summary.
             await this.loadFromCache();
             // WR-02: loadFromCache() swallows its own errors into errorAtom. If the cache
@@ -418,6 +447,7 @@ export class JiraTasksViewModel implements ViewModel {
             globalStore.set(this.errorAtom, msg);
         } finally {
             globalStore.set(this.loadingAtom, false);
+            globalStore.set(this.refreshLiveAtom, null);
         }
     }
 
@@ -455,9 +485,16 @@ export class JiraTasksViewModel implements ViewModel {
 
     toggleStatus(cat: StatusCategory): void {
         const current = globalStore.get(this.statusFilterAtom);
-        const next = current.includes(cat) ? current.filter((c) => c !== cat) : [...current, cat];
+        const isAdding = !current.includes(cat);
+        const next = isAdding ? [...current, cat] : current.filter((c) => c !== cat);
         globalStore.set(this.statusFilterAtom, next);
         this.persistPrefs();
+        // When the user ADDS a category, the cache may not contain those issues
+        // (they were excluded by the previous refresh's JQL filter). Trigger a
+        // full refresh so the newly-included category is populated.
+        if (isAdding && !globalStore.get(this.loadingAtom)) {
+            fireAndForget(() => this.requestJiraRefresh(true));
+        }
     }
 
     setDateFilter(f: DateFilter): void {
@@ -539,41 +576,92 @@ export class JiraTasksViewModel implements ViewModel {
         globalStore.set(this.expandedKeyAtom, current === key ? null : key);
     }
 
-    buildAnalysisPrompt(issue: JiraIssue, multiline: boolean): string {
-        const header = [
-            `Key: ${issue.key}`,
-            `Summary: ${issue.summary}`,
-            `Status: ${issue.status}`,
-            `Priority: ${issue.priority}`,
-            `Project: ${issue.projectKey}`,
-            `URL: ${issue.webUrl}`,
-        ];
-        const attachLines = (issue.attachments || [])
-            .filter((a) => a.localPath)
-            .map((a) => `- ${a.filename} (${a.mimeType}) -> ${a.localPath}`);
-        const sep = multiline ? "\n" : ", ";
-        const body = header.join(sep);
-        const attachBlock =
-            attachLines.length > 0
-                ? (multiline ? "\n\nAttachments:\n" : " | Attachments: ") + attachLines.join(multiline ? "\n" : "; ")
-                : "";
+    // buildContextMarkdown renders the full issue context (summary, description,
+    // comments, both downloaded and remote attachments) as a markdown document.
+    // This is written to ~/.config/waveterm/jira-analyze/<KEY>.md and referenced
+    // from the CLI prompt via @path, keeping the CLI command line short.
+    buildContextMarkdown(issue: JiraIssue): string {
+        const lines: string[] = [];
+        lines.push(`# ${issue.key}: ${issue.summary}`);
+        lines.push("");
+        lines.push(`- **Status:** ${issue.status}`);
+        lines.push(`- **Priority:** ${issue.priority}`);
+        lines.push(`- **Project:** ${issue.projectName || issue.projectKey} (${issue.projectKey})`);
+        lines.push(`- **Updated:** ${issue.updated}`);
+        lines.push(`- **URL:** ${issue.webUrl}`);
+        lines.push("");
+        lines.push("## Description");
+        lines.push("");
+        lines.push(issue.description || "_(본문 없음)_");
+        lines.push("");
+
+        const attachments = issue.attachments || [];
+        const local = attachments.filter((a) => a.localPath);
+        const remote = attachments.filter((a) => !a.localPath);
+        if (attachments.length > 0) {
+            lines.push("## Attachments");
+            lines.push("");
+            if (local.length > 0) {
+                lines.push("### 다운로드된 파일 (바로 Read 가능)");
+                for (const a of local) {
+                    lines.push(`- \`${a.filename}\` (${a.mimeType}) → ${a.localPath}`);
+                }
+                lines.push("");
+            }
+            if (remote.length > 0) {
+                lines.push("### 원격 첨부 (필요하면 아래 명령으로 다운로드)");
+                for (const a of remote) {
+                    const sizeKB = a.size ? ` · ${Math.round(a.size / 1024)} KB` : "";
+                    lines.push(`- \`${a.filename}\` (${a.mimeType}${sizeKB})`);
+                    lines.push(`  - \`wsh jira download ${issue.key} ${a.filename}\``);
+                }
+                lines.push("");
+            }
+        }
+
         const comments = issue.comments || [];
-        const commentBlock = comments.length > 0
-            ? (multiline
-                ? `\n\nComments (${comments.length}):\n` + comments.map((c) => {
-                    const when = c.updated || c.created || "";
-                    return `--- ${c.author} @ ${when}${c.truncated ? " [truncated]" : ""}\n${c.body}`;
-                }).join("\n\n")
-                : ` | Comments(${comments.length}): ${comments.map((c) => `[${c.author}] ${c.body.replace(/\s+/g, " ").slice(0, 120)}`).join(" // ")}`)
-            : "";
-        const extra = (globalStore.get(this.extraPromptAtom) || "").trim();
-        const extraBlock = extra ? (multiline ? `\n\n추가 지시:\n${extra}` : ` | 추가 지시: ${extra}`) : "";
+        if (comments.length > 0) {
+            lines.push(`## Comments (${issue.commentCount || comments.length})`);
+            lines.push("");
+            for (const c of comments) {
+                const when = c.updated || c.created || "";
+                const trunc = c.truncated ? " _(truncated)_" : "";
+                lines.push(`### ${c.author} · ${when}${trunc}`);
+                lines.push("");
+                lines.push(c.body || "_(빈 댓글)_");
+                lines.push("");
+            }
+        }
+        return lines.join("\n");
+    }
+
+    async writeContextFile(issue: JiraIssue): Promise<string> {
+        const md = this.buildContextMarkdown(issue);
+        const dir = "~/.config/waveterm/jira-analyze";
+        const path = `${dir}/${issue.key}.md`;
+        // Ensure parent directory — first analyze on a fresh install has no dir.
+        try {
+            await RpcApi.FileMkdirCommand(TabRpcClient, { info: { path: dir } });
+        } catch {
+            // Ignore already-exists; write will fail with a clear error if the dir
+            // is genuinely unusable.
+        }
+        await RpcApi.FileWriteCommand(TabRpcClient, {
+            info: { path },
+            data64: stringToBase64(md),
+        });
+        return path;
+    }
+
+    // buildAnalysisPrompt returns a short one-line prompt that references the
+    // context file via @path so Claude auto-loads it. Heavy content lives in
+    // the file, not the CLI args.
+    buildAnalysisPrompt(issue: JiraIssue, contextPath: string): string {
         const skill = (globalStore.get(this.analyzeSkillAtom) || "").trim();
-        const instruction = skill
-            ? `${skill} 로 이 Jira 이슈를 처리해줘.`
-            : "이 이슈의 본문, 첨부파일, 댓글을 모두 참고해서 분석해줘. 댓글에 해결 방향 힌트가 있을 수 있으니 놓치지 말고, 필요하면 첨부파일을 Read 도구로 직접 읽어보고 관련 코드가 있으면 찾아서 설명해줘.";
-        const intro = skill ? skill : "Jira 이슈를 분석해줘.";
-        return `${intro}${multiline ? "\n\n" : " "}${body}${attachBlock}${commentBlock}${extraBlock}${multiline ? "\n\n" : " "}${instruction}`;
+        const extra = (globalStore.get(this.extraPromptAtom) || "").trim();
+        const prefix = skill ? `${skill}로 ` : "";
+        const extraPart = extra ? ` ${extra}` : "";
+        return `${prefix}${issue.key} 분석해줘. 컨텍스트: @${contextPath}. 필요하면 원격 첨부파일은 파일 안에 적힌 \`wsh jira download\` 명령으로 받고 Read 도구로 읽어줘.${extraPart}`;
     }
 
     private getCli(): string {
@@ -582,7 +670,8 @@ export class JiraTasksViewModel implements ViewModel {
     }
 
     async analyzeIssueInNewTerminal(issue: JiraIssue): Promise<void> {
-        const prompt = this.buildAnalysisPrompt(issue, true);
+        const contextPath = await this.writeContextFile(issue);
+        const prompt = this.buildAnalysisPrompt(issue, contextPath);
         const cli = this.getCli();
         const blockDef: BlockDef = {
             meta: {
@@ -593,7 +682,17 @@ export class JiraTasksViewModel implements ViewModel {
                 "cmd:interactive": true,
             },
         };
-        await createBlock(blockDef);
+        const newBlockId = await createBlock(blockDef);
+        // Claude CLI renders the arg in its input buffer but waits for Enter
+        // to submit. 500ms is enough for the shell + CLI to initialize.
+        setTimeout(() => {
+            fireAndForget(() =>
+                RpcApi.ControllerInputCommand(TabRpcClient, {
+                    blockid: newBlockId,
+                    inputdata64: stringToBase64("\r"),
+                })
+            );
+        }, 500);
     }
 
     resolveTargetTerminal(): string | null {
@@ -624,7 +723,8 @@ export class JiraTasksViewModel implements ViewModel {
             return;
         }
 
-        const prompt = this.buildAnalysisPrompt(issue, false);
+        const contextPath = await this.writeContextFile(issue);
+        const prompt = this.buildAnalysisPrompt(issue, contextPath);
         const cli = this.getCli();
         const cmd = `${cli} "${prompt.replace(/"/g, '\\"')}"\r`;
 
@@ -632,6 +732,15 @@ export class JiraTasksViewModel implements ViewModel {
             blockid: target,
             inputdata64: stringToBase64(cmd),
         });
+        // 500ms delay gives the CLI time to enter raw mode before the Enter lands.
+        setTimeout(() => {
+            fireAndForget(() =>
+                RpcApi.ControllerInputCommand(TabRpcClient, {
+                    blockid: target,
+                    inputdata64: stringToBase64("\r"),
+                })
+            );
+        }, 500);
     }
 
     setTargetBlockId(blockId: string | null): void {
@@ -922,6 +1031,7 @@ function JiraTasksView({ model }: { model: JiraTasksViewModel }) {
     const loading = useAtomValue(model.loadingAtom);
     const error = useAtomValue(model.errorAtom);
     const refreshProgress = useAtomValue(model.refreshProgressAtom);
+    const refreshLive = useAtomValue(model.refreshLiveAtom);
     const launchMode = useAtomValue(model.launchModeAtom);
     const fetchedAt = useAtomValue(model.fetchedAtAtom);
     const expandedKey = useAtomValue(model.expandedKeyAtom);
@@ -1113,7 +1223,13 @@ function JiraTasksView({ model }: { model: JiraTasksViewModel }) {
                 {loading && issues.length === 0 && (
                     <div className="jiratasks-empty">
                         <i className="fa-solid fa-spinner fa-spin" />
-                        <span>로딩 중...</span>
+                        <span>{refreshLive || "로딩 중..."}</span>
+                    </div>
+                )}
+                {loading && issues.length > 0 && refreshLive && (
+                    <div className="jira-refresh-summary">
+                        <i className="fa-solid fa-spinner fa-spin" />
+                        <span>{refreshLive}</span>
                     </div>
                 )}
                 {/*

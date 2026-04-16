@@ -31,6 +31,7 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/jira"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -62,7 +63,21 @@ func (ws *WshServer) JiraRefreshCommand(ctx context.Context, data wshrpc.Command
 	if err != nil {
 		return wshrpc.CommandJiraRefreshRtnData{}, mapJiraError(err)
 	}
-	report, err := jiraRefresh(ctx, jira.RefreshOpts{Config: cfg})
+	report, err := jiraRefresh(ctx, jira.RefreshOpts{
+		Config:           cfg,
+		StatusCategories: data.StatusCategories,
+		ForceFull:        data.ForceFull,
+		OnProgress: func(stage string, current, total int) {
+			wps.Broker.Publish(wps.WaveEvent{
+				Event: wps.Event_JiraRefreshProgress,
+				Data: &wps.JiraRefreshProgressData{
+					Stage:   stage,
+					Current: current,
+					Total:   total,
+				},
+			})
+		},
+	})
 	if err != nil {
 		return wshrpc.CommandJiraRefreshRtnData{}, mapJiraError(err)
 	}

@@ -34,7 +34,16 @@ const (
 	Event_AIModeConfig        = "waveai:modeconfig"    // type: wconfig.AIModeConfigUpdate
 	Event_BlockJobStatus      = "block:jobstatus"      // type: wshrpc.BlockJobStatusData
 	Event_Badge               = "badge"                // type: baseds.BadgeEvent
+	Event_JiraRefreshProgress = "jira:refreshprogress" // type: *JiraRefreshProgressData
 )
+
+// JiraRefreshProgressData is broadcast during `JiraRefreshCommand` execution
+// so the widget can render mid-refresh progress (N/M issues fetched).
+type JiraRefreshProgressData struct {
+	Stage   string `json:"stage"`   // "search" | "fetch" | "write"
+	Current int    `json:"current"` // items completed so far
+	Total   int    `json:"total"`   // items expected; 0 = unknown
+}
 
 var AllEvents []string = []string{
 	Event_BlockClose,
@@ -56,6 +65,7 @@ var AllEvents []string = []string{
 	Event_AIModeConfig,
 	Event_BlockJobStatus,
 	Event_Badge,
+	Event_JiraRefreshProgress,
 }
 
 type WaveEvent struct {

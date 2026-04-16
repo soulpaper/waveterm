@@ -27,6 +27,41 @@ type Config struct {
 	PageSize int    `json:"pageSize"` // optional, default = 50
 }
 
+// configRaw is an internal unmarshal type that accepts both the canonical field
+// names and the legacy aliases produced by the earlier Claude+Atlassian-MCP
+// setup flow (`siteUrl` and `pat`). If both canonical and legacy are set, the
+// canonical wins.
+type configRaw struct {
+	BaseUrl  string `json:"baseUrl"`
+	SiteUrl  string `json:"siteUrl"` // legacy alias for baseUrl
+	CloudId  string `json:"cloudId"`
+	Email    string `json:"email"`
+	ApiToken string `json:"apiToken"`
+	Pat      string `json:"pat"` // legacy alias for apiToken
+	Jql      string `json:"jql"`
+	PageSize int    `json:"pageSize"`
+}
+
+func (c *Config) UnmarshalJSON(data []byte) error {
+	var raw configRaw
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	c.BaseUrl = raw.BaseUrl
+	if c.BaseUrl == "" {
+		c.BaseUrl = raw.SiteUrl
+	}
+	c.CloudId = raw.CloudId
+	c.Email = raw.Email
+	c.ApiToken = raw.ApiToken
+	if c.ApiToken == "" {
+		c.ApiToken = raw.Pat
+	}
+	c.Jql = raw.Jql
+	c.PageSize = raw.PageSize
+	return nil
+}
+
 // Default values applied by LoadConfig / LoadConfigFromPath when fields are
 // missing or zero. Keep these as exported constants so Phase 2's refresh
 // orchestrator can reference the same literals.

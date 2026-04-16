@@ -65,9 +65,18 @@ func newRefreshTestServer(t *testing.T, issueKeys []string, issueFixtures map[st
 			fmt.Fprint(w, `{"accountId":"acc-dev-os","displayName":"Dev","emailAddress":"dev@example.com"}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/rest/api/3/search/jql":
 			_, _ = io.ReadAll(r.Body)
+			// Search now returns full issue bodies so Refresh can skip
+			// per-issue GetIssue calls. Fixtures are already in the Issue
+			// shape {id,key,fields}; splice them into the `issues` array.
 			refs := make([]string, 0, len(issueKeys))
-			for i, k := range issueKeys {
-				refs = append(refs, fmt.Sprintf(`{"id":"%d","key":"%s"}`, 10000+i, k))
+			for _, k := range issueKeys {
+				body, ok := issueFixtures[k]
+				if !ok {
+					// Key has no fixture — omit from search results so tests
+					// that simulate "issue deleted after search" still work.
+					continue
+				}
+				refs = append(refs, body)
 			}
 			fmt.Fprintf(w, `{"issues":[%s],"isLast":true,"nextPageToken":""}`, strings.Join(refs, ","))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/rest/api/3/issue/"):
@@ -240,15 +249,16 @@ func TestRefresh_CommentCapAndTruncation(t *testing.T) {
 	if len(iss.Comments) != 10 {
 		t.Fatalf("Comments: got %d, want 10", len(iss.Comments))
 	}
-	// Last-10 rule: oldest-5 dropped = c01..c05; kept = c06..c15 in ascending order.
-	if iss.Comments[0].ID != "c06" {
-		t.Errorf("first kept comment id: got %q, want c06", iss.Comments[0].ID)
+	// Last-10 rule: oldest-5 dropped = c01..c05; kept = c06..c15.
+	// Cache stores newest-first: Comments[0] = c15, Comments[9] = c06.
+	if iss.Comments[0].ID != "c15" {
+		t.Errorf("first kept comment id: got %q, want c15 (newest-first)", iss.Comments[0].ID)
 	}
-	if iss.Comments[9].ID != "c15" {
-		t.Errorf("last kept comment id: got %q, want c15", iss.Comments[9].ID)
+	if iss.Comments[9].ID != "c06" {
+		t.Errorf("last kept comment id: got %q, want c06 (newest-first)", iss.Comments[9].ID)
 	}
 	// c06 has the 2500-char body → truncated to 2000, Truncated=true.
-	c06 := iss.Comments[0]
+	c06 := iss.Comments[9]
 	if len(c06.Body) != 2000 {
 		t.Errorf("c06 body len: got %d, want 2000", len(c06.Body))
 	}
@@ -256,7 +266,7 @@ func TestRefresh_CommentCapAndTruncation(t *testing.T) {
 		t.Errorf("c06 Truncated: got false, want true")
 	}
 	// c07 has a short body → not truncated, field must be omitted in JSON.
-	c07 := iss.Comments[1]
+	c07 := iss.Comments[8]
 	if c07.Truncated {
 		t.Errorf("c07 Truncated: got true, want false")
 	}
@@ -522,8 +532,8 @@ func TestRefresh_ProgressCallback(t *testing.T) {
 		}
 		return false
 	}
-	if !has("fetch", 1, 1) {
-		t.Errorf("missing ('fetch', 1, 1) in %v", calls)
+	if !has("build", 1, 1) {
+		t.Errorf("missing ('build', 1, 1) in %v", calls)
 	}
 	if !has("write", 1, 1) {
 		t.Errorf("missing ('write', 1, 1) in %v", calls)

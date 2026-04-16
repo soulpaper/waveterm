@@ -30,18 +30,18 @@
       ],
       "comments": [
         {
-          "id": "c1",
-          "author": "User One",
-          "created": "2026-04-02T09:00:00.000+0000",
-          "updated": "2026-04-02T09:00:00.000+0000",
-          "body": "First"
-        },
-        {
           "id": "c2",
           "author": "User Two",
           "created": "2026-04-03T10:00:00.000+0000",
           "updated": "2026-04-03T10:30:00.000+0000",
           "body": "Second"
+        },
+        {
+          "id": "c1",
+          "author": "User One",
+          "created": "2026-04-02T09:00:00.000+0000",
+          "updated": "2026-04-02T09:00:00.000+0000",
+          "body": "First"
         }
       ],
       "commentCount": 2,

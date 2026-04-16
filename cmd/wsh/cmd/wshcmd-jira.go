@@ -59,7 +59,7 @@ func init() {
 	jiraCmd.AddCommand(jiraRefreshCmd)
 	jiraCmd.AddCommand(jiraDownloadCmd)
 	jiraRefreshCmd.Flags().BoolVar(&jiraRefreshJSON, "json", false, "emit JSON instead of human-readable summary")
-	jiraRefreshCmd.Flags().IntVar(&jiraRefreshTimeout, "timeout", 60, "RPC timeout in seconds")
+	jiraRefreshCmd.Flags().IntVar(&jiraRefreshTimeout, "timeout", 300, "RPC timeout in seconds")
 	jiraDownloadCmd.Flags().BoolVar(&jiraDownloadJSON, "json", false, "emit JSON instead of human-readable summary")
 	jiraDownloadCmd.Flags().IntVar(&jiraDownloadTimeout, "timeout", 120, "RPC timeout in seconds")
 }
@@ -72,14 +72,11 @@ func jiraRefreshRun(cmd *cobra.Command, args []string) (rtnErr error) {
 		sendActivity("jira-refresh", rtnErr == nil && WshExitCode == 0)
 	}()
 
-	opts := &wshrpc.RpcOpts{Timeout: int64(jiraRefreshTimeout) * 1000}
-	// Route: when run inside a Wave tab, use the tab route so the handler sees
-	// the caller's context. When run from a standalone terminal (no
-	// WAVETERM_TABID), leave Route empty — the default wavesrv route handles
-	// the refresh since it doesn't need tab state.
-	if tabId := os.Getenv("WAVETERM_TABID"); tabId != "" {
-		opts.Route = wshutil.MakeTabRouteId(tabId)
-	}
+	// JiraRefreshCommand is registered on the main wavesrv (WshServer), not on
+	// per-tab servers. Always route to DefaultRoute so the command reaches the
+	// right handler regardless of whether we run inside a Wave tab or a
+	// standalone terminal.
+	opts := &wshrpc.RpcOpts{Timeout: int64(jiraRefreshTimeout) * 1000, Route: wshutil.DefaultRoute}
 
 	rtn, err := wshclient.JiraRefreshCommand(RpcClient, wshrpc.CommandJiraRefreshData{}, opts)
 	if err != nil {
@@ -134,10 +131,7 @@ func jiraDownloadRun(cmd *cobra.Command, args []string) (rtnErr error) {
 		filename = args[1]
 	}
 
-	opts := &wshrpc.RpcOpts{Timeout: int64(jiraDownloadTimeout) * 1000}
-	if tabId := os.Getenv("WAVETERM_TABID"); tabId != "" {
-		opts.Route = wshutil.MakeTabRouteId(tabId)
-	}
+	opts := &wshrpc.RpcOpts{Timeout: int64(jiraDownloadTimeout) * 1000, Route: wshutil.DefaultRoute}
 
 	rtn, err := wshclient.JiraDownloadCommand(RpcClient, wshrpc.CommandJiraDownloadData{
 		IssueKey: issueKey,

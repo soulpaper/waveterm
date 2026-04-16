@@ -440,7 +440,10 @@ declare global {
     };
 
     // wshrpc.CommandJiraRefreshData
-    type CommandJiraRefreshData = object;
+    type CommandJiraRefreshData = {
+        statuscategories?: string[];
+        forcefull?: boolean;
+    };
 
     // wshrpc.CommandJiraRefreshRtnData
     type CommandJiraRefreshRtnData = {
@@ -1056,6 +1059,13 @@ declare global {
         configerrors: ConfigError[];
         version: string;
         buildtime: string;
+    };
+
+    // wps.JiraRefreshProgressData
+    type JiraRefreshProgressData = {
+        stage: string;
+        current: number;
+        total: number;
     };
 
     // waveobj.Job
