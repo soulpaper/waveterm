@@ -36,14 +36,28 @@ type Client struct {
 	hc  *http.Client
 }
 
-// NewClient constructs a Client with a 30s-timeout http.Client. This is the
-// normal production entry point. Callers that need a custom http.Client
-// (tests, or future phases that inject a rate-limiting Transport) use
-// NewClientWithHTTP.
+// defaultRPS is the default token-bucket rate for outbound Jira requests.
+// 10 req/s with burst=1 ensures evenly spaced calls (D-RL-01, D-RL-03).
+const defaultRPS = 10.0
+
+// defaultMaxRetries is the maximum number of retry attempts for 429/5xx
+// responses (not counting the initial request). D-RETRY-03: 3 retries =
+// up to 4 total attempts.
+const defaultMaxRetries = 3
+
+// NewClient constructs a Client with a 30s-timeout http.Client whose
+// transport is wrapped with RetryTransport(RateLimitedTransport(...)).
+// This is the normal production entry point. Callers that need a custom
+// http.Client (tests, httptest, custom transport) use NewClientWithHTTP
+// which does NOT apply any wrapping.
 func NewClient(cfg Config) *Client {
+	// Order per D-RETRY-04: each retry re-acquires a rate-limiter token.
+	// http.DefaultTransport → RateLimitedTransport → RetryTransport
+	transport := NewRateLimitedTransport(http.DefaultTransport, defaultRPS)
+	transport = NewRetryTransport(transport, defaultMaxRetries)
 	return &Client{
 		cfg: cfg,
-		hc:  &http.Client{Timeout: defaultTimeout},
+		hc:  &http.Client{Timeout: defaultTimeout, Transport: transport},
 	}
 }
 
