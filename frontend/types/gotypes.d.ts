@@ -418,6 +418,27 @@ declare global {
         chatid: string;
     };
 
+    // wshrpc.CommandJiraDownloadData
+    type CommandJiraDownloadData = {
+        issuekey: string;
+        filename?: string;
+    };
+
+    // wshrpc.CommandJiraDownloadFileResult
+    type CommandJiraDownloadFileResult = {
+        filename: string;
+        size: number;
+        localpath: string;
+        skipped?: boolean;
+    };
+
+    // wshrpc.CommandJiraDownloadRtnData
+    type CommandJiraDownloadRtnData = {
+        issuekey: string;
+        files: CommandJiraDownloadFileResult[];
+        totalbytes: number;
+    };
+
     // wshrpc.CommandJiraRefreshData
     type CommandJiraRefreshData = object;
 

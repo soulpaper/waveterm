@@ -34,11 +34,12 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-// jiraLoadConfig and jiraRefresh are overridable seams for unit tests
-// (D-TEST-01). Production code uses the real pkg/jira implementations.
+// jiraLoadConfig, jiraRefresh, and jiraDownload are overridable seams for unit
+// tests (D-TEST-01). Production code uses the real pkg/jira implementations.
 var (
-	jiraLoadConfig = jira.LoadConfig
-	jiraRefresh    = jira.Refresh
+	jiraLoadConfig  = jira.LoadConfig
+	jiraRefresh     = jira.Refresh
+	jiraDownload    = jira.DownloadAttachments
 )
 
 // tokenLikeRegexp matches 20+ char runs of base64/JWT/token-shaped characters.
@@ -73,6 +74,61 @@ func (ws *WshServer) JiraRefreshCommand(ctx context.Context, data wshrpc.Command
 		CachePath:       report.CachePath,
 		FetchedAt:       started.UTC().Format(time.RFC3339),
 	}, nil
+}
+
+// JiraDownloadCommand downloads attachment(s) for a given issue key via
+// pkg/jira.DownloadAttachments. Returns file details on success. On failure,
+// returns a sanitized user-facing error per the same rules as JiraRefreshCommand.
+func (ws *WshServer) JiraDownloadCommand(ctx context.Context, data wshrpc.CommandJiraDownloadData) (wshrpc.CommandJiraDownloadRtnData, error) {
+	defer func() {
+		panichandler.PanicHandler("JiraDownloadCommand", recover())
+	}()
+	cfg, err := jiraLoadConfig()
+	if err != nil {
+		return wshrpc.CommandJiraDownloadRtnData{}, mapJiraError(err)
+	}
+	report, err := jiraDownload(ctx, jira.DownloadOpts{
+		Config:   cfg,
+		IssueKey: data.IssueKey,
+		Filename: data.Filename,
+	})
+	if err != nil {
+		return wshrpc.CommandJiraDownloadRtnData{}, mapJiraDownloadError(err)
+	}
+	files := make([]wshrpc.CommandJiraDownloadFileResult, 0, len(report.Downloaded))
+	for _, dl := range report.Downloaded {
+		files = append(files, wshrpc.CommandJiraDownloadFileResult{
+			Filename:  dl.Filename,
+			Size:      dl.Size,
+			LocalPath: dl.LocalPath,
+			Skipped:   dl.Skipped,
+		})
+	}
+	return wshrpc.CommandJiraDownloadRtnData{
+		IssueKey:   report.IssueKey,
+		Files:      files,
+		TotalBytes: report.TotalBytes,
+	}, nil
+}
+
+// mapJiraDownloadError translates download errors. Reuses mapJiraError for
+// config/auth errors, adds download-specific messages for cache/attachment errors.
+func mapJiraDownloadError(err error) error {
+	if err == nil {
+		return nil
+	}
+	// Check if mapJiraError handles it (config, auth, rate limit, network).
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "not found in cache"):
+		return fmt.Errorf("download failed: %s", sanitizeErrMessage(err))
+	case strings.Contains(msg, "no attachment named"):
+		return fmt.Errorf("download failed: %s", sanitizeErrMessage(err))
+	case strings.Contains(msg, "has no attachments"):
+		return fmt.Errorf("download failed: %s", sanitizeErrMessage(err))
+	default:
+		return mapJiraError(err)
+	}
 }
 
 // mapJiraError translates a pkg/jira error into the exact user-facing Korean

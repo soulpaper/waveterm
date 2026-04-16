@@ -38,16 +38,30 @@ var jiraRefreshCmd = &cobra.Command{
 	PreRunE: preRunSetupRpcClient,
 }
 
+var jiraDownloadCmd = &cobra.Command{
+	Use:     "download <ISSUE-KEY> [filename]",
+	Short:   "Download attachment(s) for a Jira issue",
+	Long:    "Downloads attachment file(s) to ~/.config/waveterm/jira-attachments/<KEY>/. If [filename] is omitted, all attachments are downloaded.",
+	Args:    cobra.RangeArgs(1, 2),
+	RunE:    jiraDownloadRun,
+	PreRunE: preRunSetupRpcClient,
+}
+
 var (
-	jiraRefreshJSON    bool
-	jiraRefreshTimeout int
+	jiraRefreshJSON     bool
+	jiraRefreshTimeout  int
+	jiraDownloadJSON    bool
+	jiraDownloadTimeout int
 )
 
 func init() {
 	rootCmd.AddCommand(jiraCmd)
 	jiraCmd.AddCommand(jiraRefreshCmd)
+	jiraCmd.AddCommand(jiraDownloadCmd)
 	jiraRefreshCmd.Flags().BoolVar(&jiraRefreshJSON, "json", false, "emit JSON instead of human-readable summary")
 	jiraRefreshCmd.Flags().IntVar(&jiraRefreshTimeout, "timeout", 60, "RPC timeout in seconds")
+	jiraDownloadCmd.Flags().BoolVar(&jiraDownloadJSON, "json", false, "emit JSON instead of human-readable summary")
+	jiraDownloadCmd.Flags().IntVar(&jiraDownloadTimeout, "timeout", 120, "RPC timeout in seconds")
 }
 
 // jiraRefreshRun invokes wshclient.JiraRefreshCommand and prints either a
@@ -104,6 +118,81 @@ func exitCodeForError(err error) int {
 	default:
 		return 3
 	}
+}
+
+// jiraDownloadRun invokes wshclient.JiraDownloadCommand and prints either a
+// human-readable summary or JSON. On RPC error it prints the error to stderr
+// and sets WshExitCode.
+func jiraDownloadRun(cmd *cobra.Command, args []string) (rtnErr error) {
+	defer func() {
+		sendActivity("jira-download", rtnErr == nil && WshExitCode == 0)
+	}()
+
+	issueKey := args[0]
+	var filename string
+	if len(args) > 1 {
+		filename = args[1]
+	}
+
+	opts := &wshrpc.RpcOpts{Timeout: int64(jiraDownloadTimeout) * 1000}
+	if tabId := os.Getenv("WAVETERM_TABID"); tabId != "" {
+		opts.Route = wshutil.MakeTabRouteId(tabId)
+	}
+
+	rtn, err := wshclient.JiraDownloadCommand(RpcClient, wshrpc.CommandJiraDownloadData{
+		IssueKey: issueKey,
+		Filename: filename,
+	}, opts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		WshExitCode = exitCodeForError(err)
+		return nil
+	}
+
+	if jiraDownloadJSON {
+		out, marshalErr := json.MarshalIndent(rtn, "", "  ")
+		if marshalErr != nil {
+			return fmt.Errorf("marshal rtn: %w", marshalErr)
+		}
+		fmt.Println(string(out))
+		return nil
+	}
+
+	fmt.Println(formatDownloadSummary(rtn))
+	return nil
+}
+
+// formatDownloadSummary renders the human-readable success line for downloads.
+// Format: "Downloaded N files (X.Y MB total) → ~/.config/waveterm/jira-attachments/KEY/"
+func formatDownloadSummary(rtn wshrpc.CommandJiraDownloadRtnData) string {
+	newCount := 0
+	skipCount := 0
+	for _, f := range rtn.Files {
+		if f.Skipped {
+			skipCount++
+		} else {
+			newCount++
+		}
+	}
+
+	sizeMB := float64(rtn.TotalBytes) / (1024 * 1024)
+	var parts []string
+	if newCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d downloaded", newCount))
+	}
+	if skipCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped", skipCount))
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("No attachments for %s", rtn.IssueKey)
+	}
+
+	summary := strings.Join(parts, ", ")
+	if rtn.TotalBytes > 0 {
+		return fmt.Sprintf("%s files (%s, %.1f MB total) for %s",
+			fmt.Sprintf("%d", len(rtn.Files)), summary, sizeMB, rtn.IssueKey)
+	}
+	return fmt.Sprintf("%d files (%s) for %s", len(rtn.Files), summary, rtn.IssueKey)
 }
 
 // formatRefreshSummary renders the human-readable success line per D-CLI-02.

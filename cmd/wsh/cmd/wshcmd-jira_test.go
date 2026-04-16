@@ -91,6 +91,102 @@ func TestJiraRefreshExitCodeNoTokenLeak(t *testing.T) {
 	}
 }
 
+// TestJiraDownloadCmdHelp asserts `wsh jira download --help` lists expected flags
+// and usage pattern.
+func TestJiraDownloadCmdHelp(t *testing.T) {
+	buf := &bytes.Buffer{}
+	jiraDownloadCmd.SetOut(buf)
+	jiraDownloadCmd.SetErr(buf)
+	t.Cleanup(func() {
+		jiraDownloadCmd.SetOut(nil)
+		jiraDownloadCmd.SetErr(nil)
+	})
+	if err := jiraDownloadCmd.Help(); err != nil {
+		t.Fatalf("jiraDownloadCmd.Help() returned error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "ISSUE-KEY") {
+		t.Errorf("expected download help to mention ISSUE-KEY, got:\n%s", out)
+	}
+	if !strings.Contains(out, "--json") {
+		t.Errorf("expected download help to contain --json flag, got:\n%s", out)
+	}
+	if !strings.Contains(out, "--timeout") {
+		t.Errorf("expected download help to contain --timeout flag, got:\n%s", out)
+	}
+}
+
+// TestJiraCmdHelpListsDownload asserts `wsh jira --help` now also lists the
+// download subcommand alongside refresh.
+func TestJiraCmdHelpListsDownload(t *testing.T) {
+	buf := &bytes.Buffer{}
+	jiraCmd.SetOut(buf)
+	jiraCmd.SetErr(buf)
+	t.Cleanup(func() {
+		jiraCmd.SetOut(nil)
+		jiraCmd.SetErr(nil)
+	})
+	if err := jiraCmd.Help(); err != nil {
+		t.Fatalf("jiraCmd.Help() returned error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "download") {
+		t.Errorf("expected `jira` help to list download subcommand, got:\n%s", out)
+	}
+}
+
+// TestFormatDownloadSummary asserts human-readable download output formatting.
+func TestFormatDownloadSummary(t *testing.T) {
+	cases := []struct {
+		name string
+		in   wshrpc.CommandJiraDownloadRtnData
+		want string
+	}{
+		{
+			name: "single new download",
+			in: wshrpc.CommandJiraDownloadRtnData{
+				IssueKey: "TEST-1",
+				Files: []wshrpc.CommandJiraDownloadFileResult{
+					{Filename: "report.pdf", Size: 1048576, LocalPath: "/tmp/att/report.pdf"},
+				},
+				TotalBytes: 1048576,
+			},
+			want: "1 files (1 downloaded, 1.0 MB total) for TEST-1",
+		},
+		{
+			name: "mixed downloaded and skipped",
+			in: wshrpc.CommandJiraDownloadRtnData{
+				IssueKey: "ITSM-100",
+				Files: []wshrpc.CommandJiraDownloadFileResult{
+					{Filename: "a.txt", Size: 100, LocalPath: "/tmp/a.txt"},
+					{Filename: "b.txt", Size: 200, LocalPath: "/tmp/b.txt", Skipped: true},
+				},
+				TotalBytes: 100,
+			},
+			want: "2 files (1 downloaded, 1 skipped, 0.0 MB total) for ITSM-100",
+		},
+		{
+			name: "all skipped",
+			in: wshrpc.CommandJiraDownloadRtnData{
+				IssueKey: "X-1",
+				Files: []wshrpc.CommandJiraDownloadFileResult{
+					{Filename: "c.txt", Size: 50, LocalPath: "/tmp/c.txt", Skipped: true},
+				},
+				TotalBytes: 0,
+			},
+			want: "1 files (1 skipped) for X-1",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := formatDownloadSummary(tc.in)
+			if got != tc.want {
+				t.Errorf("formatDownloadSummary mismatch:\n  got:  %q\n  want: %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestFormatRefreshSummary asserts D-CLI-02 output format with singular/plural
 // and elapsed-time formatting cases.
 func TestFormatRefreshSummary(t *testing.T) {

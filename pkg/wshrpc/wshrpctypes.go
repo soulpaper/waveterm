@@ -85,6 +85,7 @@ type WshRpcInterface interface {
 
 	// jira
 	JiraRefreshCommand(ctx context.Context, data CommandJiraRefreshData) (CommandJiraRefreshRtnData, error)
+	JiraDownloadCommand(ctx context.Context, data CommandJiraDownloadData) (CommandJiraDownloadRtnData, error)
 	WaveInfoCommand(ctx context.Context) (*WaveInfoData, error)
 	MacOSVersionCommand(ctx context.Context) (string, error)
 	WshActivityCommand(ct context.Context, data map[string]int) error
@@ -557,6 +558,28 @@ type CommandJiraRefreshRtnData struct {
 	ElapsedMs       int64  `json:"elapsedms"`
 	CachePath       string `json:"cachepath"`
 	FetchedAt       string `json:"fetchedat"` // RFC3339
+}
+
+// CommandJiraDownloadData is the request payload for JiraDownloadCommand.
+// IssueKey is required. Filename is optional — empty means all attachments.
+type CommandJiraDownloadData struct {
+	IssueKey string `json:"issuekey"`
+	Filename string `json:"filename,omitempty"`
+}
+
+// CommandJiraDownloadFileResult describes a single downloaded attachment.
+type CommandJiraDownloadFileResult struct {
+	Filename  string `json:"filename"`
+	Size      int64  `json:"size"`
+	LocalPath string `json:"localpath"`
+	Skipped   bool   `json:"skipped,omitempty"`
+}
+
+// CommandJiraDownloadRtnData is the response payload for JiraDownloadCommand.
+type CommandJiraDownloadRtnData struct {
+	IssueKey   string                          `json:"issuekey"`
+	Files      []CommandJiraDownloadFileResult  `json:"files"`
+	TotalBytes int64                           `json:"totalbytes"`
 }
 
 type AiMessageData struct {

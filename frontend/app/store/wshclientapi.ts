@@ -510,6 +510,12 @@ export class RpcApiType {
         return client.wshRpcCall("getwaveairatelimit", null, opts);
     }
 
+    // command "jiradownload" [call]
+    JiraDownloadCommand(client: WshClient, data: CommandJiraDownloadData, opts?: RpcOpts): Promise<CommandJiraDownloadRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jiradownload", data, opts);
+        return client.wshRpcCall("jiradownload", data, opts);
+    }
+
     // command "jirarefresh" [call]
     JiraRefreshCommand(client: WshClient, data: CommandJiraRefreshData, opts?: RpcOpts): Promise<CommandJiraRefreshRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jirarefresh", data, opts);
