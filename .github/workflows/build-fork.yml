@@ -1,0 +1,97 @@
+# Fork-specific release workflow.
+# On tag push (v*), builds Windows binaries (unsigned) and publishes a GitHub Release.
+# No secrets required. Guarded to only run on the soulpaper fork.
+
+name: Build Fork Release
+run-name: Build ${{ github.ref_name }} (fork)
+
+on:
+    push:
+        tags:
+            - "v[0-9]+.[0-9]+.[0-9]+*"
+    workflow_dispatch:
+
+env:
+    GO_VERSION: "1.25.6"
+    NODE_VERSION: 22
+    NODE_OPTIONS: --max-old-space-size=4096
+
+jobs:
+    build-windows:
+        if: github.repository_owner == 'soulpaper'
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v6
+
+            - name: Install Zig
+              uses: mlugg/setup-zig@v2
+
+            - name: Install FPM
+              run: gem install fpm
+
+            - uses: actions/setup-go@v6
+              with:
+                  go-version: ${{ env.GO_VERSION }}
+                  cache-dependency-path: go.sum
+
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: npm
+                  cache-dependency-path: package-lock.json
+
+            - name: npm ci
+              uses: nick-fields/retry@v4
+              with:
+                  command: npm ci --no-audit --no-fund
+                  retry_on: error
+                  max_attempts: 3
+                  timeout_minutes: 5
+
+            - name: Install Task
+              uses: arduino/setup-task@v2
+              with:
+                  version: 3.x
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Build Windows (unsigned)
+              run: task package
+              shell: powershell
+              env:
+                  USE_SYSTEM_FPM: true
+
+            - name: Upload build artifacts
+              uses: actions/upload-artifact@v5
+              with:
+                  name: windows-build
+                  path: |
+                      make/*.exe
+                      make/*.msi
+                      make/*.zip
+                      make/latest*.yml
+
+    create-release:
+        if: github.repository_owner == 'soulpaper' && github.event_name == 'push'
+        needs: build-windows
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - name: Download artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  path: make
+                  merge-multiple: true
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+                  name: ${{ github.ref_name }}
+                  generate_release_notes: true
+                  draft: false
+                  files: |
+                      make/*.exe
+                      make/*.msi
+                      make/*.zip
+                      make/latest*.yml

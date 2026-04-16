@@ -8,7 +8,7 @@ on:
 jobs:
     publish-s3:
         name: Publish to Releases
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && github.repository_owner == 'wavetermdev' }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v6
@@ -26,7 +26,7 @@ jobs:
               shell: bash
     publish-snap-amd64:
         name: Publish AMD64 Snap
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && github.repository_owner == 'wavetermdev' }}
         needs: [publish-s3]
         runs-on: ubuntu-latest
         steps:
@@ -51,7 +51,7 @@ jobs:
               shell: bash
     publish-snap-arm64:
         name: Publish ARM64 Snap
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && github.repository_owner == 'wavetermdev' }}
         needs: [publish-s3]
         runs-on: ubuntu-latest
         steps:
@@ -76,7 +76,7 @@ jobs:
               shell: bash
     bump-winget:
         name: Submit WinGet PR
-        if: ${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, 'beta') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, 'beta') && github.repository_owner == 'wavetermdev' }}
         needs: [publish-s3]
         runs-on: windows-latest
         steps:
