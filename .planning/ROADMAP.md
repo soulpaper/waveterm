@@ -127,7 +127,7 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Rate limiter + retry transports (RateLimitedTransport + RetryTransport in transport.go with TDD)
+- [x] 05-01-PLAN.md — Rate limiter + retry transports (RateLimitedTransport + RetryTransport in transport.go with TDD)
 - [ ] 05-02-PLAN.md — Attachment download logic (download.go) + RPC handler + `wsh jira download` CLI + `task generate`
 - [ ] 05-03-PLAN.md — Wire hardened transport into NewClient default + integration test (429/5xx retry through full Client)
 
