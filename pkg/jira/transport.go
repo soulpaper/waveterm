@@ -4,7 +4,9 @@
 package jira
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"time"
 
@@ -82,11 +84,33 @@ func NewRetryTransport(inner http.RoundTripper, maxRetries int) http.RoundTrippe
 //
 // Per T-05-03, response bodies are closed before retrying to prevent leaking
 // partial response data.
+//
+// Request bodies are buffered so POST/PUT requests can be replayed on retry.
+// Jira request payloads are small (search JQL, ~100 bytes), so buffering is
+// safe and bounded by the caller's payload size.
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Buffer the request body (if any) so we can replay it on retries.
+	// Without this, POST bodies are consumed on the first attempt and
+	// subsequent retries send an empty body (ContentLength mismatch).
+	var bodyBytes []byte
+	if req.Body != nil {
+		var err error
+		bodyBytes, err = io.ReadAll(req.Body)
+		req.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var resp *http.Response
 	var err error
 
 	for attempt := 0; attempt <= t.maxRetries; attempt++ {
+		// Reset the body for each attempt.
+		if bodyBytes != nil {
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
+
 		resp, err = t.inner.RoundTrip(req)
 		if err != nil {
 			return nil, err
