@@ -418,6 +418,43 @@ declare global {
         chatid: string;
     };
 
+    // wshrpc.CommandJiraDownloadData
+    type CommandJiraDownloadData = {
+        issuekey: string;
+        filename?: string;
+    };
+
+    // wshrpc.CommandJiraDownloadFileResult
+    type CommandJiraDownloadFileResult = {
+        filename: string;
+        size: number;
+        localpath: string;
+        skipped?: boolean;
+    };
+
+    // wshrpc.CommandJiraDownloadRtnData
+    type CommandJiraDownloadRtnData = {
+        issuekey: string;
+        files: CommandJiraDownloadFileResult[];
+        totalbytes: number;
+    };
+
+    // wshrpc.CommandJiraRefreshData
+    type CommandJiraRefreshData = {
+        statuscategories?: string[];
+        forcefull?: boolean;
+    };
+
+    // wshrpc.CommandJiraRefreshRtnData
+    type CommandJiraRefreshRtnData = {
+        issuecount: number;
+        attachmentcount: number;
+        commentcount: number;
+        elapsedms: number;
+        cachepath: string;
+        fetchedat: string;
+    };
+
     // wshrpc.CommandJobCmdExitedData
     type CommandJobCmdExitedData = {
         jobid: string;
@@ -1022,6 +1059,13 @@ declare global {
         configerrors: ConfigError[];
         version: string;
         buildtime: string;
+    };
+
+    // wps.JiraRefreshProgressData
+    type JiraRefreshProgressData = {
+        stage: string;
+        current: number;
+        total: number;
     };
 
     // waveobj.Job

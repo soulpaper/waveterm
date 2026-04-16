@@ -82,6 +82,10 @@ type WshRpcInterface interface {
 	BlockInfoCommand(ctx context.Context, blockId string) (*BlockInfoData, error)
 	DebugTermCommand(ctx context.Context, data CommandDebugTermData) (*CommandDebugTermRtnData, error)
 	BlocksListCommand(ctx context.Context, data BlocksListRequest) ([]BlocksListEntry, error)
+
+	// jira
+	JiraRefreshCommand(ctx context.Context, data CommandJiraRefreshData) (CommandJiraRefreshRtnData, error)
+	JiraDownloadCommand(ctx context.Context, data CommandJiraDownloadData) (CommandJiraDownloadRtnData, error)
 	WaveInfoCommand(ctx context.Context) (*WaveInfoData, error)
 	MacOSVersionCommand(ctx context.Context) (string, error)
 	WshActivityCommand(ct context.Context, data map[string]int) error
@@ -535,6 +539,57 @@ type BlocksListEntry struct {
 	TabId       string              `json:"tabid"`
 	BlockId     string              `json:"blockid"`
 	Meta        waveobj.MetaMapType `json:"meta"`
+}
+
+// CommandJiraRefreshData is the request payload for JiraRefreshCommand.
+// All fields are optional — callers may pass an empty struct.
+type CommandJiraRefreshData struct {
+	// StatusCategories, if non-empty, restricts the refresh to issues whose
+	// Jira statusCategory is in this list. Valid values: "new",
+	// "indeterminate", "done". Empty = no restriction (fetch everything the
+	// base JQL returns). The widget passes the user's current filter here so
+	// the server never pulls "done" issues the user has toggled off.
+	StatusCategories []string `json:"statuscategories,omitempty"`
+
+	// ForceFull, if true, bypasses the incremental delta refresh and re-fetches
+	// every issue. The widget may set this when the user changes a filter in a
+	// way that would require previously-excluded issues to reappear.
+	ForceFull bool `json:"forcefull,omitempty"`
+}
+
+// CommandJiraRefreshRtnData is the response payload for JiraRefreshCommand.
+// Mirrors jira.RefreshReport but JSON-serializable (time.Duration -> ms,
+// wall clock recorded as RFC3339 string). Field tags follow the lowercased
+// no-separator convention used elsewhere in this file (see BlocksListEntry).
+type CommandJiraRefreshRtnData struct {
+	IssueCount      int    `json:"issuecount"`
+	AttachmentCount int    `json:"attachmentcount"`
+	CommentCount    int    `json:"commentcount"`
+	ElapsedMs       int64  `json:"elapsedms"`
+	CachePath       string `json:"cachepath"`
+	FetchedAt       string `json:"fetchedat"` // RFC3339
+}
+
+// CommandJiraDownloadData is the request payload for JiraDownloadCommand.
+// IssueKey is required. Filename is optional — empty means all attachments.
+type CommandJiraDownloadData struct {
+	IssueKey string `json:"issuekey"`
+	Filename string `json:"filename,omitempty"`
+}
+
+// CommandJiraDownloadFileResult describes a single downloaded attachment.
+type CommandJiraDownloadFileResult struct {
+	Filename  string `json:"filename"`
+	Size      int64  `json:"size"`
+	LocalPath string `json:"localpath"`
+	Skipped   bool   `json:"skipped,omitempty"`
+}
+
+// CommandJiraDownloadRtnData is the response payload for JiraDownloadCommand.
+type CommandJiraDownloadRtnData struct {
+	IssueKey   string                          `json:"issuekey"`
+	Files      []CommandJiraDownloadFileResult  `json:"files"`
+	TotalBytes int64                           `json:"totalbytes"`
 }
 
 type AiMessageData struct {

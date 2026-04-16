@@ -1,0 +1,36 @@
+{
+  "cloudId": "cloud-xxx",
+  "baseUrl": "https://example.atlassian.net",
+  "accountId": "acc-dev-os",
+  "fetchedAt": "2026-04-14T00:00:00Z",
+  "issues": [
+    {
+      "key": "ITSM-1",
+      "id": "10001",
+      "summary": "Example issue (stale)",
+      "description": "Stale description",
+      "status": "In Progress",
+      "statusCategory": "indeterminate",
+      "issueType": "Bug",
+      "priority": "High",
+      "projectKey": "ITSM",
+      "projectName": "IT Service Management",
+      "updated": "2026-04-10T00:00:00.000+0000",
+      "created": "2026-04-01T08:00:00.000+0000",
+      "webUrl": "https://example.atlassian.net/browse/ITSM-1",
+      "attachments": [
+        {
+          "id": "att1",
+          "filename": "screenshot.png",
+          "mimeType": "image/png",
+          "size": 12345,
+          "localPath": "C:/Users/dev/downloaded/att1-screenshot.png",
+          "webUrl": "https://example.atlassian.net/rest/api/3/attachment/content/att1"
+        }
+      ],
+      "comments": [],
+      "commentCount": 0,
+      "lastCommentAt": ""
+    }
+  ]
+}

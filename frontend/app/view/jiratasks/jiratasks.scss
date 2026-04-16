@@ -367,8 +367,7 @@
     }
 }
 
-.jiratasks-empty,
-.jiratasks-error {
+.jiratasks-empty {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -378,8 +377,97 @@
     font-size: 13px;
 }
 
-.jiratasks-error {
-    color: var(--error-color, #f87171);
+/*
+ * Phase 4 Plan 01: error-state cards (D-STATE-01..04).
+ * One card per failure mode; each state overrides only its icon color and
+ * inherits the shared frame, copy, CTAs, and toast styles below.
+ */
+.jiratasks-state-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin: 24px auto;
+    padding: 28px 24px;
+    max-width: 480px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--panel-bg-color, rgba(255, 255, 255, 0.03));
+    text-align: center;
+
+    .state-icon {
+        font-size: 32px;
+        color: var(--secondary-text-color);
+        opacity: 0.85;
+    }
+    .state-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--main-text-color);
+    }
+    .state-body {
+        font-size: 13px;
+        color: var(--secondary-text-color);
+        line-height: 1.5;
+        code {
+            background: rgba(0, 0, 0, 0.25);
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-family: var(--termfontfamily, monospace);
+            font-size: 12px;
+        }
+        .error-raw {
+            display: block;
+            margin-top: 6px;
+            font-family: var(--termfontfamily, monospace);
+            font-size: 12px;
+            color: var(--error-color, #f87171);
+            word-break: break-word;
+        }
+    }
+    .state-ctas {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-top: 4px;
+    }
+    .cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        color: var(--main-text-color);
+        transition: background 0.15s, border-color 0.15s;
+        &:hover { border-color: #a855f7; }
+        i { opacity: 0.9; }
+    }
+    // Purple accent matches the existing widget "댓글" section pattern.
+    .cta-primary {
+        background: rgba(168, 85, 247, 0.15);
+        border-color: rgba(168, 85, 247, 0.5);
+        color: #c4b5fd;
+        &:hover { background: rgba(168, 85, 247, 0.28); }
+    }
+    .state-toast {
+        margin-top: 6px;
+        padding: 4px 10px;
+        font-size: 12px;
+        color: #a7f3d0;
+        background: rgba(16, 185, 129, 0.12);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        border-radius: 4px;
+    }
+
+    &.state-setup   .state-icon { color: #a855f7; }
+    &.state-auth    .state-icon { color: #f59e0b; }
+    &.state-network .state-icon { color: #3b82f6; }
+    &.state-unknown .state-icon { color: #f87171; }
 }
 
 .jira-issue-card {

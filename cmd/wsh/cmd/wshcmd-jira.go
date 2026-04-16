@@ -1,0 +1,200 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+// wshcmd-jira.go — `wsh jira` parent command + `refresh` subcommand.
+//
+// Exit-code handling note: this repo has no `exitCodeError` sentinel pattern
+// (verified via grep of cmd/wsh for `exitCodeError` / `os.Exit(`). The
+// established convention is to set the package-level `WshExitCode` variable
+// (see cmd/wsh/cmd/wshcmd-getvar.go) and return nil; cmd/wsh/cmd/wshcmd-root.go
+// Execute() forwards that value to wshutil.DoShutdown. We follow that
+// convention instead of calling os.Exit directly.
+
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
+	"github.com/wavetermdev/waveterm/pkg/wshutil"
+)
+
+var jiraCmd = &cobra.Command{
+	Use:   "jira",
+	Short: "Interact with Jira (PAT-authenticated)",
+	Long:  "Jira commands. Configure ~/.config/waveterm/jira.json first. See README.",
+}
+
+var jiraRefreshCmd = &cobra.Command{
+	Use:     "refresh",
+	Short:   "Fetch latest Jira issues into the cache",
+	RunE:    jiraRefreshRun,
+	PreRunE: preRunSetupRpcClient,
+}
+
+var jiraDownloadCmd = &cobra.Command{
+	Use:     "download <ISSUE-KEY> [filename]",
+	Short:   "Download attachment(s) for a Jira issue",
+	Long:    "Downloads attachment file(s) to ~/.config/waveterm/jira-attachments/<KEY>/. If [filename] is omitted, all attachments are downloaded.",
+	Args:    cobra.RangeArgs(1, 2),
+	RunE:    jiraDownloadRun,
+	PreRunE: preRunSetupRpcClient,
+}
+
+var (
+	jiraRefreshJSON     bool
+	jiraRefreshTimeout  int
+	jiraDownloadJSON    bool
+	jiraDownloadTimeout int
+)
+
+func init() {
+	rootCmd.AddCommand(jiraCmd)
+	jiraCmd.AddCommand(jiraRefreshCmd)
+	jiraCmd.AddCommand(jiraDownloadCmd)
+	jiraRefreshCmd.Flags().BoolVar(&jiraRefreshJSON, "json", false, "emit JSON instead of human-readable summary")
+	jiraRefreshCmd.Flags().IntVar(&jiraRefreshTimeout, "timeout", 300, "RPC timeout in seconds")
+	jiraDownloadCmd.Flags().BoolVar(&jiraDownloadJSON, "json", false, "emit JSON instead of human-readable summary")
+	jiraDownloadCmd.Flags().IntVar(&jiraDownloadTimeout, "timeout", 120, "RPC timeout in seconds")
+}
+
+// jiraRefreshRun invokes wshclient.JiraRefreshCommand and prints either a
+// human-readable summary or JSON. On RPC error it prints the error to stderr
+// and sets WshExitCode per D-ERR-04.
+func jiraRefreshRun(cmd *cobra.Command, args []string) (rtnErr error) {
+	defer func() {
+		sendActivity("jira-refresh", rtnErr == nil && WshExitCode == 0)
+	}()
+
+	// JiraRefreshCommand is registered on the main wavesrv (WshServer), not on
+	// per-tab servers. Always route to DefaultRoute so the command reaches the
+	// right handler regardless of whether we run inside a Wave tab or a
+	// standalone terminal.
+	opts := &wshrpc.RpcOpts{Timeout: int64(jiraRefreshTimeout) * 1000, Route: wshutil.DefaultRoute}
+
+	rtn, err := wshclient.JiraRefreshCommand(RpcClient, wshrpc.CommandJiraRefreshData{}, opts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		WshExitCode = exitCodeForError(err)
+		return nil
+	}
+
+	if jiraRefreshJSON {
+		out, marshalErr := json.MarshalIndent(rtn, "", "  ")
+		if marshalErr != nil {
+			return fmt.Errorf("marshal rtn: %w", marshalErr)
+		}
+		fmt.Println(string(out))
+		return nil
+	}
+
+	fmt.Println(formatRefreshSummary(rtn))
+	return nil
+}
+
+// exitCodeForError maps a JiraRefreshCommand RPC error to a shell exit code
+// per D-ERR-04. The Korean prefixes are emitted verbatim by Plan 01's
+// mapJiraError (pkg/wshrpc/wshserver/wshserver-jira.go) so prefix-matching is
+// the contract. Unknown errors fall through to 3.
+func exitCodeForError(err error) int {
+	if err == nil {
+		return 0
+	}
+	msg := err.Error()
+	switch {
+	case strings.HasPrefix(msg, "인증 실패"):
+		return 1
+	case strings.HasPrefix(msg, "설정 파일이 없습니다"):
+		return 2
+	default:
+		return 3
+	}
+}
+
+// jiraDownloadRun invokes wshclient.JiraDownloadCommand and prints either a
+// human-readable summary or JSON. On RPC error it prints the error to stderr
+// and sets WshExitCode.
+func jiraDownloadRun(cmd *cobra.Command, args []string) (rtnErr error) {
+	defer func() {
+		sendActivity("jira-download", rtnErr == nil && WshExitCode == 0)
+	}()
+
+	issueKey := args[0]
+	var filename string
+	if len(args) > 1 {
+		filename = args[1]
+	}
+
+	opts := &wshrpc.RpcOpts{Timeout: int64(jiraDownloadTimeout) * 1000, Route: wshutil.DefaultRoute}
+
+	rtn, err := wshclient.JiraDownloadCommand(RpcClient, wshrpc.CommandJiraDownloadData{
+		IssueKey: issueKey,
+		Filename: filename,
+	}, opts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		WshExitCode = exitCodeForError(err)
+		return nil
+	}
+
+	if jiraDownloadJSON {
+		out, marshalErr := json.MarshalIndent(rtn, "", "  ")
+		if marshalErr != nil {
+			return fmt.Errorf("marshal rtn: %w", marshalErr)
+		}
+		fmt.Println(string(out))
+		return nil
+	}
+
+	fmt.Println(formatDownloadSummary(rtn))
+	return nil
+}
+
+// formatDownloadSummary renders the human-readable success line for downloads.
+// Format: "Downloaded N files (X.Y MB total) → ~/.config/waveterm/jira-attachments/KEY/"
+func formatDownloadSummary(rtn wshrpc.CommandJiraDownloadRtnData) string {
+	newCount := 0
+	skipCount := 0
+	for _, f := range rtn.Files {
+		if f.Skipped {
+			skipCount++
+		} else {
+			newCount++
+		}
+	}
+
+	sizeMB := float64(rtn.TotalBytes) / (1024 * 1024)
+	var parts []string
+	if newCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d downloaded", newCount))
+	}
+	if skipCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped", skipCount))
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("No attachments for %s", rtn.IssueKey)
+	}
+
+	summary := strings.Join(parts, ", ")
+	if rtn.TotalBytes > 0 {
+		return fmt.Sprintf("%s files (%s, %.1f MB total) for %s",
+			fmt.Sprintf("%d", len(rtn.Files)), summary, sizeMB, rtn.IssueKey)
+	}
+	return fmt.Sprintf("%d files (%s) for %s", len(rtn.Files), summary, rtn.IssueKey)
+}
+
+// formatRefreshSummary renders the human-readable success line per D-CLI-02.
+// Elapsed is printed with one decimal second; counts are integers. The arrow
+// character (U+2192) is literal.
+func formatRefreshSummary(rtn wshrpc.CommandJiraRefreshRtnData) string {
+	elapsed := time.Duration(rtn.ElapsedMs) * time.Millisecond
+	return fmt.Sprintf("Fetched %d issues (%d attachments, %d comments) in %.1fs → %s",
+		rtn.IssueCount, rtn.AttachmentCount, rtn.CommentCount,
+		elapsed.Seconds(), rtn.CachePath)
+}
