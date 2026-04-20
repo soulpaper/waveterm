@@ -43,6 +43,8 @@ export class Updater {
     availableUpdateReleaseNotes: string | null;
     private _status: UpdaterStatus;
     lastUpdateCheck: Date;
+    private currentCheckIsUserInitiated: boolean = false;
+    private declinedVersion: string | null = null;
 
     constructor(settings: SettingsType) {
         this.intervalms = settings["autoupdate:intervalms"];
@@ -57,6 +59,9 @@ export class Updater {
 
         autoUpdater.autoInstallOnAppQuit = settings["autoupdate:installonquit"];
         console.log("Install update on quit:", settings["autoupdate:installonquit"]);
+
+        // Don't auto-download — prompt the user first.
+        autoUpdater.autoDownload = false;
 
         // Only update the release channel if it's specified, otherwise use the one configured in the updater.
         autoUpdater.channel = getUpdateChannel(settings);
@@ -75,9 +80,19 @@ export class Updater {
             this.status = "checking";
         });
 
-        autoUpdater.on("update-available", () => {
-            console.log("update-available; downloading...");
-            this.status = "downloading";
+        autoUpdater.on("update-available", (info) => {
+            console.log("update-available", info?.version);
+            const version = info?.version ?? "";
+            const isUserCheck = this.currentCheckIsUserInitiated;
+            // Skip prompting again for a version the user already declined, unless they manually triggered this check.
+            if (!isUserCheck && version && version === this.declinedVersion) {
+                console.log("update previously declined, skipping prompt:", version);
+                this.status = "up-to-date";
+                return;
+            }
+            this.availableUpdateReleaseName = version || (info?.releaseName as string) || null;
+            this.availableUpdateReleaseNotes = (info?.releaseNotes as string) ?? null;
+            fireAndForget(() => this.promptToDownloadUpdate(version));
         });
 
         autoUpdater.on("update-not-available", () => {
@@ -157,10 +172,18 @@ export class Updater {
             (this.autoCheckInterval &&
                 (!this.lastUpdateCheck || Math.abs(now.getTime() - this.lastUpdateCheck.getTime()) > this.intervalms))
         ) {
-            const result = await autoUpdater.checkForUpdates();
+            this.currentCheckIsUserInitiated = userInput;
+            let result: Awaited<ReturnType<typeof autoUpdater.checkForUpdates>> | null = null;
+            try {
+                result = await autoUpdater.checkForUpdates();
+            } finally {
+                this.currentCheckIsUserInitiated = false;
+            }
 
-            // If the user requested this check and we do not have an available update, let them know with a popup dialog. No need to tell them if there is an update, because we show a banner once the update is ready to install.
-            if (userInput && !result.downloadPromise) {
+            // With autoDownload disabled, downloadPromise is always undefined, so detect "no update" via version comparison.
+            const latest = result?.updateInfo?.version;
+            const hasUpdate = !!latest && latest !== autoUpdater.currentVersion?.version;
+            if (userInput && !hasUpdate) {
                 const dialogOpts: Electron.MessageBoxOptions = {
                     type: "info",
                     message: "There are currently no updates available.",
@@ -172,6 +195,39 @@ export class Updater {
 
             // Only update the last check time if this is an automatic check. This ensures the interval remains consistent.
             if (!userInput) this.lastUpdateCheck = now;
+        }
+    }
+
+    /**
+     * Prompts the user to download the newly-available update. Called from the update-available handler.
+     */
+    async promptToDownloadUpdate(version: string) {
+        const allWindows = getAllWaveWindows();
+        if (allWindows.length === 0) return;
+        const dialogOpts: Electron.MessageBoxOptions = {
+            type: "info",
+            buttons: ["Download", "Later"],
+            defaultId: 0,
+            cancelId: 1,
+            title: "Update Available",
+            message: version ? `Wave Terminal ${version} is available.` : "A new version of Wave Terminal is available.",
+            detail: "Would you like to download it now? The app will notify you again once the download finishes.",
+        };
+        const { response } = await dialog.showMessageBox(focusedWaveWindow ?? allWindows[0], dialogOpts);
+        if (response === 0) {
+            console.log("user accepted update download:", version);
+            this.declinedVersion = null;
+            this.status = "downloading";
+            try {
+                await autoUpdater.downloadUpdate();
+            } catch (e) {
+                console.log("downloadUpdate failed", e);
+                this.status = "error";
+            }
+        } else {
+            console.log("user declined update:", version);
+            this.declinedVersion = version || null;
+            this.status = "up-to-date";
         }
     }
 
