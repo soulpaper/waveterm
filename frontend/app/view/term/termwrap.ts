@@ -42,6 +42,7 @@ import {
     extractAllClipboardData,
     normalizeCursorStyle,
     quoteForPosixShell,
+    trimTerminalSelection,
 } from "./termutil";
 
 const dlog = debug("wave:termwrap");
@@ -436,6 +437,7 @@ export class TermWrap {
 
     async initTerminal() {
         const copyOnSelectAtom = getSettingsKeyAtom("term:copyonselect");
+        const trimTrailingWhitespaceAtom = getSettingsKeyAtom("term:trimtrailingwhitespace");
         this.toDispose.push(this.terminal.onData(this.handleTermData.bind(this)));
         this.toDispose.push(
             this.terminal.onSelectionChange(
@@ -449,8 +451,11 @@ export class TermWrap {
                     if (active != null && active.closest(".search-container") != null) {
                         return;
                     }
-                    const selectedText = this.terminal.getSelection();
+                    let selectedText = this.terminal.getSelection();
                     if (selectedText.length > 0) {
+                        if (globalStore.get(trimTrailingWhitespaceAtom) !== false) {
+                            selectedText = trimTerminalSelection(selectedText);
+                        }
                         navigator.clipboard.writeText(selectedText);
                     }
                 })
